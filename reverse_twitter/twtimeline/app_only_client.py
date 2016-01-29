@@ -1,12 +1,9 @@
 # coding: utf-8
 import argparse
 import asyncio
-import base64
 import logging
 import sys
 
-from operator import methodcaller
-from urllib.parse import quote
 from urllib.parse import urljoin
 
 import aiohttp
@@ -18,20 +15,10 @@ FORMAT = '%(name)s:%(levelname)s %(module)s:%(lineno)d:%(asctime)s  %(message)s'
 logger = logging.getLogger(__name__)
 
 
-to_bytes = methodcaller('encode', 'utf-8')
-
-
-def get_basic_auth_header(consumer_key, secret):
-    k = quote(consumer_key)
-    sc = quote(secret)
-    return 'Basic ' + base64.b64encode(to_bytes('{0}:{1}'.format(k, sc))).decode('utf-8')
-
-
 async def get_bearer_token(consumer_key,  secret):
     data = {'grant_type': 'client_credentials'}
-    headers = {'Authorization': get_basic_auth_header(consumer_key, secret)}
     with aiohttp.Timeout(TIMEOUT):
-        async with aiohttp.post(urljoin(API_URL, 'oauth2/token'), data=data, headers=headers) as r:
+        async with aiohttp.post(urljoin(API_URL, 'oauth2/token'), data=data, auth=aiohttp.BasicAuth(consumer_key, secret)) as r:
             if r.status == 200:
                 j = await r.json()
                 if j.get('token_type') == 'bearer':
