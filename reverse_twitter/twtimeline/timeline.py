@@ -1,18 +1,19 @@
 # coding: utf-8
 import argparse
+import asyncio
+import functools
 import logging
 import time
 import sys
 import urllib
 from collections import namedtuple
 
-import simplejson
 from aioauth_client import TwitterClient
+import app_only_client
 
 
-FORMAT = '%(name)s:%(levelname)s %(module)s:%(lineno)d:%(asctime)s  %(message)s'
 logger = logging.getLogger(__name__)
-TimelineOptions = namedtuple('TimelineOptions', 'count max_id since_id trim_user')
+TimelineOptions = namedtuple('TimelineOptions', 'count max_id since_id trim_user screen_name')
 
 
 def send_oauth_req(url, consumer_key, consumer_secret, token, token_secret=None):
@@ -28,16 +29,21 @@ def send_oauth_req(url, consumer_key, consumer_secret, token, token_secret=None)
     return content
 
 
+async def get_timeline(url, consumer_key, consumer_secret):
+    auth = await app_only_client.get_bearer_auth(consumer_key, consumer_secret)
+    timeline = await app_only_client.request('GET', url, auth=auth)
+    return timeline
+
+
 class Timeline(object):
     """Iterator over timeline"""
-    def __init__(self, consumer_key, consumer_secret, token, timeline_options, delay_func=time.sleep):
-        self._consumer_key = consumer_key
-        self._consumer_secret = consumer_secret
-        self._token = token
+    def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep):
         self._count = timeline_options.count
         self._max_id = timeline_options.max_id
         self._since_id = timeline_options.since_id
         self._trim_user = timeline_options.trim_user
+        self._screen_name = timeline_options.screen_name
+        self._get_timeline_func = get_timeline_func
         self._first_request = True
         self._timeline = []
         self._export_all = not (timeline_options.max_id or timeline_options.since_id)
@@ -63,48 +69,49 @@ class Timeline(object):
             o['since_id'] = self._since_id
         o['count'] = self._count
         o['trim_user'] = self._trim_user
+        o['screen_name'] = self._screen_name
         return o
 
     def _check_response(self, resp):
-        if resp['status'] not in ('200', '429'):
-            raise Exception(u'Status is {0}'.format(resp['status']))
+        if resp.status not in (200, 429):
+            raise Exception(u'Status is {0}'.format(resp.status))
 
-        remaining = int(resp['x-rate-limit-remaining'])
+        remaining = int(resp.headers['x-rate-limit-remaining'])
         if remaining == 0:
-            reset = int(resp['x-rate-limit-reset'])
+            reset = int(resp.headers['x-rate-limit-reset'])
             self._delay = reset - int(time.time())
 
-    def _get_user_timeline(self):
+    async def _get_user_timeline(self):
         if self._delay:
             logger.debug(u'Waiting %s secs', self._delay)
             self._delay_func(self._delay)
             self._delay = 0
 
-        qs = urllib.urlencode(self._prepare_options())
-        url = '/statuses/user_timeline.json'
+        qs = urllib.parse.urlencode(self._prepare_options())
+        url = 'statuses/user_timeline.json'
         if qs:
             url = '{0}?{1}'.format(url, qs)
-        content = send_oauth_req(url, self._consumer_key, self._consumer_secret, self._token)
-        logger.debug(u'Url %s, got response %s', url, content)
-        # self._check_response(resp)
-        return simplejson.loads(content)
+        content, resp = await self._get_timeline_func(url)
+        logger.debug(u'Url %s, got response %s', url, resp)
+        self._check_response(resp)
+        return content
 
-    def next(self):
+    async def __anext__(self):
         if self._first_request:
-            self._timeline = self._get_user_timeline()
+            self._timeline = await self._get_user_timeline()
             self._since_id = self._timeline[0]['id'] if self._timeline else 0
             self._first_request = False
         elif not self._timeline and self._export_all:
-            self._timeline = self._get_user_timeline()
+            self._timeline = await self._get_user_timeline()
 
         if not self._timeline:
-            raise StopIteration
+            raise StopAsyncIteration
 
         tw = self._timeline.pop(0)
         self._max_id = tw['id'] - 1
         return tw
 
-    def __iter__(self):
+    async def __aiter__(self):
         return self
 
 
@@ -129,26 +136,30 @@ if __name__ == "__main__":
 
     parser.add_argument("--trim-user", action="store", dest="trim_user", default=True, help=u"Trim user info")
 
+    parser.add_argument("--screen-name", action="store", dest="screen_name",  help=u"Screen name")
+
     args = parser.parse_args()
 
-    logging.basicConfig(stream=sys.stdout, format=FORMAT, level=getattr(logging, args.loglevel))
-    handler = logging.handlers.RotatingFileHandler(__name__, maxBytes=10 * 1024 * 1024, backupCount=1000)
-    fmt = logging.Formatter(FORMAT)
-    handler.setFormatter(fmt)
-    logger.setLevel(getattr(logging, args.loglevel))
-    logger.addHandler(handler)
+    _format = '%(name)s:%(levelname)s %(module)s:%(lineno)d:%(asctime)s  %(message)s'
+    logging.basicConfig(stream=sys.stdout, format=_format, level=getattr(logging, args.loglevel))
 
-    timeline_options = TimelineOptions(args.count, args.max_id, args.since_id, args.trim_user)
+    timeline_options = TimelineOptions(args.count, args.max_id, args.since_id, args.trim_user, args.screen_name)
 
     if args.auth_type == 'user_pin':
         timeline = None
     elif args.auth_type == 'app_only':
-        timeline = None
+        get_timeline_func = functools.partial(get_timeline, consumer_key=args.consumer_key, consumer_secret=args.consumer_secret)
+        timeline = Timeline(timeline_options, get_timeline_func)
+
+    async def print_timeline(timeline):
+        async for t in timeline:
+            print(t)
 
     logger.info('Starting')
-    try:
-        for t in timeline:
-            logger.info(u'Got tweet %s from timeline %s', t, timeline)
-    except Exception as e:
-        logger.error(u'Got error %s', e)
+    loop = asyncio.get_event_loop()
+    if args.loglevel == 'DEBUG':
+        loop.set_debug(True)
+    loop.run_until_complete(print_timeline(timeline))
+    loop.close()
+
     logger.info('Done')
