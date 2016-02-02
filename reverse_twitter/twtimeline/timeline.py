@@ -8,36 +8,16 @@ import sys
 import urllib
 from collections import namedtuple
 
-from aioauth_client import TwitterClient
-import app_only_client
+from . app_only_client import get_timeline
 
 
 logger = logging.getLogger(__name__)
 TimelineOptions = namedtuple('TimelineOptions', 'count max_id since_id trim_user screen_name')
 
 
-def send_oauth_req(url, consumer_key, consumer_secret, token, token_secret=None):
-    twitter = TwitterClient(
-        consumer_key,
-        consumer_secret,
-        token,
-        token_secret
-    )
-
-    timeline = yield from twitter.request('GET', url)
-    content = yield from timeline.read()
-    return content
-
-
-async def get_timeline(url, consumer_key, consumer_secret):
-    auth = await app_only_client.get_bearer_auth(consumer_key, consumer_secret)
-    timeline = await app_only_client.request('GET', url, auth=auth)
-    return timeline
-
-
 class Timeline(object):
     """Iterator over timeline"""
-    def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep):
+    def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep, export_all=False):
         self._count = timeline_options.count
         self._max_id = timeline_options.max_id
         self._since_id = timeline_options.since_id
@@ -46,7 +26,7 @@ class Timeline(object):
         self._get_timeline_func = get_timeline_func
         self._first_request = True
         self._timeline = []
-        self._export_all = not (timeline_options.max_id or timeline_options.since_id)
+        self._export_all = export_all and not (timeline_options.max_id or timeline_options.since_id)
         self._delay = 0
         self._delay_func = delay_func
 

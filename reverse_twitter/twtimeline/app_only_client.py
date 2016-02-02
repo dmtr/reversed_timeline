@@ -46,6 +46,12 @@ async def request(method, url, params=None, data=None, auth=None):
             return (await r.json(), r)
 
 
+async def get_timeline(url, consumer_key, consumer_secret):
+    auth = await get_bearer_auth(consumer_key, consumer_secret)
+    timeline = await request('GET', url, auth=auth)
+    return timeline
+
+
 class TwitterBearerAuth(aiohttp.BasicAuth):
 
     def __new__(cls, bearer):
