@@ -39,7 +39,7 @@ class Timeline(object):
         return self._since_id
 
     def __repr__(self):
-        return 'Timeline, max_id: {self.max_id}, since_id: {self.since_id}'.format(self=self)
+        return 'Timeline for {self._screen_name}, max_id: {self.max_id}, since_id: {self.since_id}'.format(self=self)
 
     def _prepare_options(self):
         o = dict()
