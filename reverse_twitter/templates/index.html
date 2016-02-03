@@ -5,6 +5,22 @@
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js">
 </script>
   <script language="javascript" type="text/javascript">
+    function getcookie(name) {
+        var cookievalue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = $.trim(cookies[i]);
+                // does this cookie string begin with the name we want?
+                if (cookie.substring(0, name.length + 1) == (name + '=')) {
+                    cookievalue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookievalue;
+    }
+
     $(function() {
       var conn = null;
       function log(msg) {
@@ -35,8 +51,8 @@
           log('Disconnecting...');
           conn.close();
           conn = null;
-          update_ui();
-}
+              update_ui();
+        }
       }
       function update_ui() {
         var msg = '';
@@ -58,9 +74,12 @@
         return false;
       });
       $('#send').click(function() {
-        var text = $('#text').val();
-        log('Sending: ' + text);
-        conn.send(text);
+        var msg = {  
+            screen_name: $('#text').val(),
+            type: 'start',
+            client_key: getcookie('auth')
+        };
+        conn.send(JSON.stringify(msg));
         $('#text').val('').focus();
         return false;
       });
