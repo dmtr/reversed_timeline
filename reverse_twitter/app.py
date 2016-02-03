@@ -18,6 +18,7 @@ from reverse_twitter.twtimeline import timeline
 logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(__file__)
 COOKIE_MAX_AGE = 60 * 3
+MAX_TWEETS = 5
 
 
 def get_auth_cookie_name(app):
@@ -61,14 +62,23 @@ def _get_client_params():
 
 
 async def get_tweets(resp, app, client_key, screen_name):
-    timeline_options = timeline.TimelineOptions(*_get_client_params(), screen_name)
-    get_timeline_func = functools.partial(
-        timeline.get_timeline,
-        consumer_key=app['tw_consumer_key'],
-        consumer_secret=app['tw_consumer_secret'])
-    tm = timeline.Timeline(timeline_options, get_timeline_func)
+    tm = app['clients'][client_key]
+    if tm is None:
+        timeline_options = timeline.TimelineOptions(*_get_client_params(), screen_name)
+        get_timeline_func = functools.partial(
+            timeline.get_timeline,
+            consumer_key=app['tw_consumer_key'],
+            consumer_secret=app['tw_consumer_secret'])
+        tm = timeline.Timeline(timeline_options, get_timeline_func, export_all=True)
+        app['clients'][client_key] = tm
+    logger.debug('Timeline %s', tm)
+    l = []
     async for t in tm:
-        resp.send_str(t['text'])
+        l.append(t['text'])
+        if len(l) == MAX_TWEETS:
+            for tw in l[::-1]:
+                resp.send_str(tw)
+            break
 
 
 async def ws_handler(request):
