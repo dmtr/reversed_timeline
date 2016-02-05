@@ -6,8 +6,8 @@ web:
   volumes:
     - /app/static
   env_file:
-    - ./.env
-    - ./common.env
+    - ./web/.env
+    - ./web/common.env
   command: python /app/reverse_twitter/app.py --config=/app/reverse_twitter/etc/config 
 
 nginx:
