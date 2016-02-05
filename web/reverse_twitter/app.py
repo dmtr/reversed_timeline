@@ -127,8 +127,14 @@ def index_handler(request):
 
 async def create_app(loop, config):
     app = Application(loop=loop, middlewares=[auth_middleware_factory])
+
+    @asyncio.coroutine
+    def static_processor(request):
+        return {'static_url': config['http']['static_url']}
+
     aiohttp_jinja2.setup(
         app,
+        context_processors=[static_processor, aiohttp_jinja2.request_processor],
         loader=aiohttp_jinja2.jinja2.FileSystemLoader(os.path.join(BASE_DIR, 'templates'))
     )
 
