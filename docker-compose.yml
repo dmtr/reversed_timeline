@@ -5,11 +5,9 @@ web:
     - "5000"
   volumes:
     - /app/static
-  environment:
-    - SECRET_KEY=foobar 
-    - CONSUMER_KEY=8nnQiHg720tPYZBjPY8R7w 
-    - CONSUMER_SECRET=PiuOvQUanC5LfRESG7C2aTjqWPcAT53uHurRY8Sj94 
-    - PYTHONPATH=$PYTHONPATH:/app/
+  env_file:
+    - ./.env
+    - ./common.env
   command: python /app/reverse_twitter/app.py --config=/app/reverse_twitter/etc/config 
 
 nginx:
@@ -17,8 +15,6 @@ nginx:
   build: ./nginx/
   ports:
     - "80:80"
-  volumes:
-    - /www/static
   volumes_from:
     - web
   links:
