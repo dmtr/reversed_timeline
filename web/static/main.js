@@ -1,33 +1,42 @@
-    function getcookie(name) {
-        var cookievalue = null;
-        if (document.cookie && document.cookie !== '') {
-            var cookies = document.cookie.split(';');
-            for (var i = 0; i < cookies.length; i++) {
-                var cookie = $.trim(cookies[i]);
-                // does this cookie string begin with the name we want?
-                if (cookie.substring(0, name.length + 1) == (name + '=')) {
-                    cookievalue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookievalue;
-    }
+var getCookieVal = function(name, cookies) {
+    var findByName = R.pipe(
+        R.split('='), 
+        R.head,
+        R.trim,
+        R.equals(name)
+    );
 
-    $(function() {
-      var conn = null;
-      function log(msg) {
-        var control = $('#log');
-        control.html(control.text() + msg + '<br/>');
-        control.scrollTop(control.scrollTop() + 1000);
-      }
-      function connect() {
-        disconnect();
-        var wsUri = (window.location.protocol=='https:'&&'wss://'||'ws://')+window.location.host + '/tweets';
-        conn = new WebSocket(wsUri);
-        conn.onopen = function() {
-          update_ui();
-        };
+    var getVal = R.pipe( 
+        R.split(';'),
+        R.find(findByName),
+        R.ifElse(
+            R.isNil,
+            R.identity,
+            R.pipe(R.split('='), R.last)
+        )
+    );
+    return decodeURIComponent(getVal(cookies));
+};
+
+var getCookie = function(name) {
+    var r = R.ifElse(
+        R.or(R.isNil, R.isEmpty),
+        R.identity,
+        R.curry(getCookieVal)
+    );
+  
+    return r(document.cookie);
+};
+
+var conn = null;
+
+function connect() {
+    disconnect();
+    var wsUri = (window.location.protocol=='https:'&&'wss://'||'ws://')+window.location.host + '/tweets';
+    conn = new WebSocket(wsUri);
+    conn.onopen = function() {
+    update_ui();
+};
         conn.onmessage = function(e) {
           log('Received: ' + e.data);
         };
@@ -37,7 +46,7 @@
         };
       }
       function disconnect() {
-        if (conn != null) {
+        if (conn !== null) {
           log('Disconnecting...');
           conn.close();
           conn = null;
@@ -46,7 +55,7 @@
       }
       function update_ui() {
         var msg = '';
-        if (conn == null) {
+        if (conn === null) {
           $('#status').text('disconnected');
           $('#connect').html('Connect');
         } else {
@@ -55,7 +64,7 @@
         }
       }
       $('#connect').click(function() {
-        if (conn == null) {
+        if (conn === null) {
           connect();
         } else {
           disconnect();
@@ -67,7 +76,7 @@
         var msg = {  
             screen_name: $('#text').val(),
             type: 'start',
-            client_key: getcookie('auth')
+            client_key: getCookie('auth')
         };
         conn.send(JSON.stringify(msg));
         $('#text').val('').focus();
@@ -79,5 +88,4 @@
           return false;
         }
 		});
-    });
 
