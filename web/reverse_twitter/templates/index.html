@@ -3,12 +3,45 @@
 
 {% block head %}
 {{ super() }}
+<link href="{{ static_url }}/main.css" rel="stylesheet">
 {% endblock %}
 
 {% block content %}
-<h1>HI</h1>
+<nav class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="#">Reversed Timeline</a>
+        </div>
+        <div id="navbar" class="collapse navbar-collapse">
+          <ul class="nav navbar-nav">
+            <li class="active"><a href="#">Home</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ul>
+        </div><!--/.nav-collapse -->
+      </div>
+</nav>
+
+<div class="container">
+      <div class="starter-template">
+          <div class="input-group">
+            <span class="input-group-addon" id="basic-addon1">@</span>
+              <input type="text" class="form-control" placeholder="Username"
+              aria-describedby="basic-addon1">
+          </div>
+        <input class="btn btn-default" type="button" value="Go" id="go-btn">
+      </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
+<script src="{{ static_url }}/main.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/ramda/0.19.1/ramda.min.js"></script>
 {% endblock %}
