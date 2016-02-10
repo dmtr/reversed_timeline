@@ -23,15 +23,13 @@
 {% endblock %}
   </head>
   <body>
-     <div class="container">
      {% block content %}
      {% endblock %}
-     </div>
 
     {% block scripts %}
     <!-- Placed at the end of the document so the pages load faster -->
-    <script src="{{ static_url }}/jquery/jquery.min.js"></script>
-    <script src="{{ static_url }}/bootstrap/js/bootstrap.min.js"></script>
+    <script src="{{ static_url }}/require_setup.js"></script>
+    <script src="{{ static_url }}/require.js"></script>
     {% endblock %}
   </body>
 </html>
