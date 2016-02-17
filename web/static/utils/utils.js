@@ -24,7 +24,7 @@ define(["ramda"], function(R) {
             var r = R.ifElse(
                 R.or(R.isNil, R.isEmpty),
                 R.identity,
-                R.curry(getCookieVal)
+                R.curry(getCookieVal)(name)
             );
           
             return r(document.cookie);
