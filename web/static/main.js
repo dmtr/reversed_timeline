@@ -12,7 +12,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
 
 	var nestedProp = function(props, obj) {
 		function inner(props, o) {
-            if( R.is(m.Left, o) || R.isEmpty(props) ) {
+            if (R.is(m.Left, o) || R.isEmpty(props)) {
                 return o;
             } else {
                 return inner(R.tail(props), safeProp(R.head(props), o.join()));
@@ -25,6 +25,41 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     var host = nestedProp(['location', 'host'], window);
     var wsUri = (protocol.join() == 'https:' && 'wss://' || 'ws://') + host.join() + '/tweets';
     var client_key = utils.getCookie('auth');
+    var tweets = Array();
+
+
+    function createTweet(id_str) {
+        twttr.widgets.createTweet(
+            id_str,
+            document.getElementById(id_str),
+            {
+               align: "center",
+               conversation: "none",
+               cards: "hidden"
+            }
+            ).then(function(el) {
+               console.log('tweet is displayed');
+            });
+    }
+
+    function renderTweets() {
+        var d = $('<div></div>');
+        R.forEach(function (id_str) {
+            d.append( $('<div id="' + id_str + '">') );
+        },
+        tweets);
+        $("#tweets").prepend(d);
+        R.forEach(createTweet, tweets);
+    }
+
+    function processMessage(m) {
+        if (m.type === 'tweet') {
+            tweets.push(m.tweet_id);
+        } else if (m.type === 'end') {
+            renderTweets();
+            tweets = Array();
+        }
+    }
 
     function connect() {
         var w = m.IO.of(function() {
@@ -41,7 +76,11 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
              R.identity,
              function(c) {
                 c.onmessage = function(e) {
-                  log('Received: ' + e.data).join();
+                    log('Received: ' + e.data).join();
+                    processMessage(JSON.parse(e.data));
+                };
+                c.onclose = function() {
+                    log('Closed!').join();
                 };
                 return m.IO.of(function() { return c;});
              } 
@@ -60,7 +99,8 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         var msg = {  
             screen_name: $('#username').val(),
             type: 'start',
-            client_key: client_key
+            client_key: client_key,
+            count: 10
         };
 
         conn = m.chain(function(c) { 
