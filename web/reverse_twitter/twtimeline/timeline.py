@@ -38,6 +38,18 @@ class Timeline(object):
     def since_id(self):
         return self._since_id
 
+    @property
+    def count(self):
+        return self._count
+
+    @property
+    def screen_name(self):
+        return self._screen_name
+
+    @property
+    def trim_user(self):
+        return self._trim_user
+
     def __repr__(self):
         return 'Timeline for {self._screen_name}, max_id: {self.max_id}, since_id: {self.since_id}'.format(self=self)
 
