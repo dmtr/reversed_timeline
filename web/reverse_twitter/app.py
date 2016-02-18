@@ -17,7 +17,7 @@ from reverse_twitter.twtimeline import timeline
 
 logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(__file__)
-COOKIE_MAX_AGE = 60 * 3
+COOKIE_MAX_AGE = 20
 MAX_TWEETS = 5
 
 
@@ -57,28 +57,30 @@ async def auth_middleware_factory(app, handler):
     return middleware_handler
 
 
-def _get_client_params():
-    return (10, 0, 0, True)
-
-
-async def get_tweets(resp, app, client_key, screen_name):
+async def get_tweets(resp, app, client_key, screen_name, count):
     tm = app['clients'][client_key]
-    if tm is None:
-        timeline_options = timeline.TimelineOptions(*_get_client_params(), screen_name)
-        get_timeline_func = functools.partial(
-            timeline.get_timeline,
-            consumer_key=app['tw_consumer_key'],
-            consumer_secret=app['tw_consumer_secret'])
-        tm = timeline.Timeline(timeline_options, get_timeline_func, export_all=True)
-        app['clients'][client_key] = tm
+    if tm is None or tm.screen_name != screen_name:
+        timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
+    else:
+        timeline_options = timeline.TimelineOptions(tm.count, tm.max_id, tm.since_id, tm.trim_user, tm.screen_name)
+
+    get_timeline_func = functools.partial(
+        timeline.get_timeline,
+        consumer_key=app['tw_consumer_key'],
+        consumer_secret=app['tw_consumer_secret'])
+
+    tm = timeline.Timeline(timeline_options, get_timeline_func)
+    app['clients'][client_key] = tm
     logger.debug('Timeline %s', tm)
-    l = []
+
+    tweets = []
     async for t in tm:
-        l.append(t['text'])
-        if len(l) == MAX_TWEETS:
-            for tw in l[::-1]:
-                resp.send_str(tw)
-            break
+        tweets.append(t)
+
+    for t in reversed(tweets):
+        resp.send_str(json.dumps({'type': 'tweet', 'tweet_id': t['id_str']}))
+
+    resp.send_str(json.dumps({'type': 'end'}))
 
 
 async def ws_handler(request):
@@ -101,20 +103,19 @@ async def ws_handler(request):
                 if m['type'] == 'start':
                     client_key = unsign_client_key(m.get('client_key'), app['secret_key'])
                     if client_key and client_key in app['clients']:
-                        await get_tweets(resp, app, client_key, m['screen_name'])
+                        await get_tweets(resp, app, client_key, m['screen_name'], m['count'])
                     else:
                         logger.info('Unknown client, closing')
                         await resp.close()
-                        break
+                        app['sockets'].remove(resp)
             except json.JSONDecodeError as e:
                 logger.exception('Bad json %s', e)
                 await resp.close()
-                break
+                logger.debug('Connection is closed %s', resp)
+                app['sockets'].remove(resp)
+
         elif msg.tp == MsgType.error:
             logger.exception('ws connection closed with exception %s', resp.exception())
-
-    logger.debug('Connection is closed %s', resp)
-    app['sockets'].remove(resp)
 
     return resp
 
