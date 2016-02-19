@@ -132,7 +132,7 @@ def index_handler(request):
     return response
 
 
-async def create_app(loop, config):
+async def create_app(loop, config, debug=False):
     app = Application(loop=loop, middlewares=[auth_middleware_factory])
 
     @asyncio.coroutine
@@ -151,8 +151,13 @@ async def create_app(loop, config):
     app['secret_key'] = os.environ.get('SECRET_KEY')
     app['clients'] = {}
     app['config'] = config
+
     app.router.add_route('GET', '/', index_handler)
     app.router.add_route('GET', '/tweets', ws_handler)
+    if debug:
+        app.router.add_route('GET', '/static/{a}', static_handler)
+        app.router.add_route('GET', '/static/{a}/{b}', static_handler)
+        app.router.add_route('GET', '/static/{a}/{b}/{c}', static_handler)
 
     handler = app.make_handler()
     srv = await loop.create_server(handler, config['http']['host'], config['http'].getint('port'))
@@ -169,6 +174,16 @@ async def cleanup(app, srv, handler):
     await handler.finish_connections()
     await srv.wait_closed()
     logger.info('Done')
+
+
+def static_handler(request):
+    path = BASE_DIR + '/../' + request.path[1:]
+    logger.info('Path %s', path)
+    if os.path.isfile(path):
+        with open(path, 'rb') as f:
+            return Response(status=200, body=f.read())
+    else:
+        raise aiohttp.HttpProcessingError(code=404)
 
 
 if __name__ == "__main__":
@@ -191,8 +206,9 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     if args.debug:
         loop.set_debug(True)
-    loop.add_signal_handler(signal.SIGINT, lambda _: loop.stop())
-    app, srv, handler = loop.run_until_complete(create_app(loop, config))
+
+    loop.add_signal_handler(signal.SIGINT, lambda: loop.stop())
+    app, srv, handler = loop.run_until_complete(create_app(loop, config, args.debug))
     try:
         loop.run_forever()
     except KeyboardInterrupt:
