@@ -5,6 +5,7 @@ import configparser
 import functools
 import logging
 import os
+import signal
 import sys
 import time
 
@@ -185,6 +186,7 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     if args.debug:
         loop.set_debug(True)
+    loop.add_signal_handler(signal.SIGINT, lambda _: loop.stop())
     app, srv, handler = loop.run_until_complete(create_app(loop, config))
     try:
         loop.run_forever()
