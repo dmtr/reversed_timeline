@@ -103,7 +103,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
             screen_name: $('#username').val(),
             type: 'start',
             client_key: client_key,
-            count: 10
+            count: $('#count').val()
         };
 
         conn.send(JSON.stringify(msg)); 
