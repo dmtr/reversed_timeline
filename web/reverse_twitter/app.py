@@ -12,12 +12,13 @@ import time
 import aiohttp_jinja2
 import itsdangerous
 import simplejson as json
-from aiohttp.web import Application, MsgType, WebSocketResponse
+import aiohttp
+from aiohttp.web import Application, MsgType, WebSocketResponse, Response
 from reverse_twitter.twtimeline import timeline
 
 
 logger = logging.getLogger(__name__)
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 COOKIE_MAX_AGE = 20
 MAX_TWEETS = 5
 
@@ -75,8 +76,12 @@ async def get_tweets(resp, app, client_key, screen_name, count):
     logger.debug('Timeline %s', tm)
 
     tweets = []
-    async for t in tm:
-        tweets.append(t)
+    try:
+        async for t in tm:
+            tweets.append(t)
+    except Exception as e:
+        logger.exception('Got error while requesting twitter api: %s', e)
+        resp.send_str(json.dumps({'type': 'error'}))
 
     for t in reversed(tweets):
         resp.send_str(json.dumps({'type': 'tweet', 'tweet_id': t['id_str']}))
