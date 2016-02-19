@@ -26,6 +26,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     var wsUri = (protocol.join() == 'https:' && 'wss://' || 'ws://') + host.join() + '/tweets';
     var client_key = utils.getCookie('auth');
     var tweets = Array();
+    var conn = m.Left.of('Not Connected');
 
 
     function createTweet(id_str) {
@@ -84,7 +85,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
                 c.onclose = function() {
                     log('Closed!').join();
                 };
-                return m.IO.of(function() { return c;});
+                return c;
              } 
             ),
             m.join
@@ -95,7 +96,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
 // DOM ready
     $( function() {
 
-    var conn = connect();
+    conn = connect();
 
     $('#go-btn').click(function() {
         var msg = {  
@@ -105,11 +106,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
             count: 10
         };
 
-        conn = m.chain(function(c) { 
-            c.send(JSON.stringify(msg)); 
-            return m.IO.of(function() {return c;});
-            }, 
-            conn);
+        conn.send(JSON.stringify(msg)); 
         return false;
     });
 
