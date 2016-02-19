@@ -63,7 +63,7 @@ async def get_tweets(resp, app, client_key, screen_name, count):
     if tm is None or tm.screen_name != screen_name:
         timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
     else:
-        timeline_options = timeline.TimelineOptions(tm.count, tm.max_id, tm.since_id, tm.trim_user, tm.screen_name)
+        timeline_options = timeline.TimelineOptions(tm.count, tm.max_id, 0, tm.trim_user, tm.screen_name)
 
     get_timeline_func = functools.partial(
         timeline.get_timeline,
