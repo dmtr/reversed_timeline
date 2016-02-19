@@ -58,6 +58,8 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         } else if (m.type === 'end') {
             renderTweets();
             tweets = Array();
+        } else if (m.type === 'error') {
+            console.error('Server error');
         }
     }
 
