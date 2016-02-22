@@ -84,12 +84,12 @@ async def get_tweets(resp, app, client_key, screen_name, count):
             resp.send_str(json.dumps({'type': 'tweet', 'tweet_id': t['id_str']}))
         resp.send_str(json.dumps({'type': 'end'}))
     except timeline.UserNotFound:
-        resp.send_str(json.dumps({'type': 'notfound'}))
+        resp.send_str(json.dumps({'type': 'error', 'desc': 'User not found'}))
     except timeline.TwitterError:
-        resp.send_str(json.dumps({'type': 'twitter_error'}))
+        resp.send_str(json.dumps({'type': 'error', 'desc': 'Error returned by Twitter'}))
     except Exception as e:
         logger.exception('Got error while requesting twitter api: %s', e)
-        resp.send_str(json.dumps({'type': 'error'}))
+        resp.send_str(json.dumps({'type': 'error', 'desc': 'Server error'}))
 
 
 async def ws_handler(request):

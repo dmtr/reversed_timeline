@@ -63,15 +63,8 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
             tweets = Array();
         } else if (m.type === 'error') {
             $("#alert").removeClass("hidden");
-            $("#alert").text('Server error');
-        } else if (m.type === 'notfound') {
-            $("#alert").removeClass("hidden");
-            $("#alert").text('User not found');
-        } else if (m.type === 'twitter_error') {
-            $("#alert").removeClass("hidden");
-            $("#alert").text('Twitter returned error');
+            $("#alert").text(m.desc);
         }
-
     }
 
     function connect() {

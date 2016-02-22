@@ -1,0 +1,3 @@
+FROM reversetwitter_web 
+ADD static /app/static/
+ADD reverse_twitter /app/reverse_twitter/
