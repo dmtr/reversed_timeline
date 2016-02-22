@@ -92,13 +92,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         )(w);
     }
 
-
-// DOM ready
-    $( function() {
-
-    conn = connect();
-
-    $('#go-btn').click(function() {
+	function send_msg() {
         var msg = {  
             screen_name: $('#username').val(),
             type: 'start',
@@ -107,15 +101,17 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         };
 
         conn.send(JSON.stringify(msg)); 
-        return false;
-    });
+    }
 
-    $('#username').keyup(function(e) {
-        if (e.keyCode === 13) {
-            $('#go-btn').click();
-            return false;
-        }
-    });
+// DOM ready
+    $( function() {
+
+        conn = connect();
+
+        $("#mainform").submit(function(e){
+            send_msg();
+            e.preventDefault();
+        });
 
     });
 });
