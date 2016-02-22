@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 TimelineOptions = namedtuple('TimelineOptions', 'count max_id since_id trim_user screen_name')
 
 
+class TimelineError(Exception):
+    pass
+
+
+class UserNotFound(TimelineError):
+    pass
+
+
+class TwitterError(TimelineError):
+    pass
+
+
 class Timeline(object):
     """Iterator over timeline"""
     def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep, export_all=False):
@@ -66,7 +78,10 @@ class Timeline(object):
 
     def _check_response(self, resp):
         if resp.status not in (200, 429):
-            raise Exception(u'Status is {0}'.format(resp.status))
+            if resp.status == 404:
+                raise UserNotFound()
+            else:
+                raise TwitterError(u'Status is {0}'.format(resp.status))
 
         remaining = int(resp.headers['x-rate-limit-remaining'])
         if remaining == 0:
