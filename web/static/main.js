@@ -27,6 +27,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     var client_key = utils.getCookie('auth');
     var tweets = Array();
     var conn = m.Left.of('Not Connected');
+    var currentUser = m.Left.of('None');
 
 
     function createTweet(id_str) {
@@ -112,6 +113,10 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         conn = connect();
 
         $("#mainform").submit(function(e){
+            if (currentUser !== $('#username').val()) {
+                $("#tweets").empty();
+            }
+            currentUser = $('#username').val();
             send_msg();
             e.preventDefault();
         });
