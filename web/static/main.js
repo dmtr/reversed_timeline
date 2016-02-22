@@ -54,14 +54,24 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     }
 
     function processMessage(m) {
+        $("#alert").addClass("hidden");
+
         if (m.type === 'tweet') {
             tweets.push(m.tweet_id);
         } else if (m.type === 'end') {
             renderTweets();
             tweets = Array();
         } else if (m.type === 'error') {
-            console.error('Server error');
+            $("#alert").removeClass("hidden");
+            $("#alert").text('Server error');
+        } else if (m.type === 'notfound') {
+            $("#alert").removeClass("hidden");
+            $("#alert").text('User not found');
+        } else if (m.type === 'twitter_error') {
+            $("#alert").removeClass("hidden");
+            $("#alert").text('Twitter returned error');
         }
+
     }
 
     function connect() {
