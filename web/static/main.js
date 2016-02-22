@@ -69,18 +69,9 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     }
 
     function connect() {
-        var w = m.IO.of(function() {
-                        try {
-                             return m.Right.of(new WebSocket(wsUri));
-                        }  
-                        catch (e) {
-                             return m.Left.of(e);
-                        }
-                });
+        var w = m.IO.of(function() {return new WebSocket(wsUri);});
 
-        return R.compose(
-            m.either(
-             R.identity,
+        return m.map(
              function(c) {
                 c.onmessage = function(e) {
                     log('Received: ' + e.data).join();
@@ -91,8 +82,6 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
                 };
                 return c;
              } 
-            ),
-            m.join
         )(w);
     }
 
@@ -110,7 +99,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
 // DOM ready
     $( function() {
 
-        conn = connect();
+        conn = R.compose(m.join, connect)();
 
         $("#mainform").submit(function(e){
             if (currentUser !== $('#username').val()) {
