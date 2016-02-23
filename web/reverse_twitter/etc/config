@@ -1,5 +1,10 @@
 [http]
 port = 5000
 host = 0.0.0.0
-cookie_name = auth
+auth_cookie = auth
+session_cookie = session
 static_url = /static
+[rdb]
+host = db
+port = 28015
+dbname = rtimeline

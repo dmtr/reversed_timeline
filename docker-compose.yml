@@ -9,6 +9,8 @@ web:
     - ./web/.env
     - ./web/common.env
   command: python /app/reverse_twitter/app.py --config=/app/reverse_twitter/etc/config 
+  links:
+    - db
 
 nginx:
   restart: always
@@ -19,3 +21,7 @@ nginx:
     - web
   links:
     - web:web
+
+db:
+  restart: always
+  build: ./rethinkdb/

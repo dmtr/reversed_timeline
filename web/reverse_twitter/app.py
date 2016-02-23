@@ -13,18 +13,19 @@ import aiohttp_jinja2
 import itsdangerous
 import simplejson as json
 import aiohttp
+from aioauth_client import TwitterClient
 from aiohttp.web import Application, MsgType, WebSocketResponse, Response
 from reverse_twitter.twtimeline import timeline
+from reverse_twitter.db import db
 
 
 logger = logging.getLogger(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-COOKIE_MAX_AGE = 20
-MAX_TWEETS = 5
+AUTH_COOKIE_MAX_AGE = 20
 
 
 def get_auth_cookie_name(app):
-    return app['config']['http']['cookie_name']
+    return app['config']['http']['auth_cookie']
 
 
 def sign_client_key(client_key, secret_key):
@@ -51,11 +52,24 @@ async def auth_middleware_factory(app, handler):
             if cookie_name not in request.cookies:
                 resp = await handler(request)
                 client_key = get_client_key(request.headers)
-                resp.set_cookie(cookie_name, sign_client_key(client_key, app['secret_key']), max_age=COOKIE_MAX_AGE)
+                resp.set_cookie(cookie_name, sign_client_key(client_key, app['secret_key']), max_age=AUTH_COOKIE_MAX_AGE)
                 app['clients'][client_key] = None
                 return resp
 
         return await handler(request)
+    return middleware_handler
+
+
+async def db_factory(app, handler):
+    async def middleware_handler(request):
+        conn = db.get_connection(app['config'])
+        if not conn:
+            raise aiohttp.HttpProcessingError(code=500)
+        request.conn = conn
+        resp = await handler(request)
+        conn.close()
+        return resp
+
     return middleware_handler
 
 
@@ -129,14 +143,8 @@ async def ws_handler(request):
     return resp
 
 
-def index_handler(request):
-    logger.debug('index_handler')
-    response = aiohttp_jinja2.render_template('index.html', request, {})
-    return response
-
-
 async def create_app(loop, config, debug=False):
-    app = Application(loop=loop, middlewares=[auth_middleware_factory])
+    app = Application(loop=loop, middlewares=[auth_middleware_factory, db_factory])
 
     @asyncio.coroutine
     def static_processor(request):
@@ -198,6 +206,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--debug", action="store_true", dest="debug", help="Set asyncio debug mode")
 
+    parser.add_argument("--createdb", action="store_true", dest="createdb", help="Create DB and exit")
+
     args = parser.parse_args()
 
     _format = '%(name)s:%(levelname)s %(module)s:%(lineno)d:%(asctime)s  %(message)s'
@@ -205,6 +215,10 @@ if __name__ == "__main__":
 
     config = configparser.ConfigParser()
     config.read(args.config)
+
+    if args.createdb:
+        db.setup(config)
+        sys.exit()
 
     loop = asyncio.get_event_loop()
     if args.debug:
