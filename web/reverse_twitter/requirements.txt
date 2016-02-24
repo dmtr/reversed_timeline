@@ -19,6 +19,7 @@ pexpect==4.0.1
 pickleshare==0.6
 ptyprocess==0.5
 python-mimeparse==0.1.4
+rethinkdb==2.2.0.post4
 simplegeneric==0.8.1
 simplejson==3.8.1
 six==1.10.0
