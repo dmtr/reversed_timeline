@@ -7,12 +7,14 @@ import logging
 import os
 import signal
 import sys
-import time
 
+import aiohttp
 import aiohttp_jinja2
 import itsdangerous
+import rethinkdb as rdb
 import simplejson as json
-import aiohttp
+from urllib import parse
+
 from aioauth_client import TwitterClient
 from aiohttp.web import Application, MsgType, WebSocketResponse, Response
 from reverse_twitter.twtimeline import timeline
@@ -21,40 +23,65 @@ from reverse_twitter.db import db
 
 logger = logging.getLogger(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-AUTH_COOKIE_MAX_AGE = 20
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24
 
 
-def get_auth_cookie_name(app):
-    return app['config']['http']['auth_cookie']
+def get_session_cookie_name(app):
+    return app['config']['http']['session_cookie']
 
 
-def sign_client_key(client_key, secret_key):
+def get_signed_cookie(secret_key, **kwargs):
     s = itsdangerous.URLSafeSerializer(secret_key)
-    return s.dumps(client_key)
+    return s.dumps(kwargs)
 
 
-def unsign_client_key(key, secret_key):
+def unsign_cookie(cookie, secret_key):
     try:
         s = itsdangerous.URLSafeSerializer(secret_key)
-        return s.loads(key)
+        return s.loads(cookie)
     except Exception as e:
         logger.exception('Could not unsign %s', e)
 
 
-def get_client_key(headers):
-    return '{0}:{1}'.format(headers.get('X-Forwarded-For', '_'), time.time())
+def start_session(ip, conn):
+    res = rdb.table('session').insert({
+        'ip': ip,
+        'timestamp': rdb.now(),
+        'valid': True,
+        'twitter_auth': False
+    }).run(conn)
+    return res['generated_keys'][0]
 
 
-async def auth_middleware_factory(app, handler):
+def get_session_cookie(secret_key, headers, conn):
+    return get_signed_cookie(secret_key, id=start_session(headers.get('X-Forwarded-For', None), conn))
+
+
+def get_and_check_session(request, secret_key, domain, cookie_name):
+    if 'SEC-WEBSOCKET-KEY' in request.headers:
+        origin = parse.urlparse(request.headers.get('ORIGIN'))
+        if origin.netloc != app['domain']:
+            logger.debug('Wrong origin %s', origin)
+            return
+
+    s = unsign_cookie(request.cookies.get(cookie_name), secret_key)
+    if s:
+        s = rdb.table('session').get(s.get('id')).run(request.conn)
+        if s and s['valid'] == True:
+            return s
+
+
+async def session_middleware_factory(app, handler):
     async def middleware_handler(request):
-        cookie_name = get_auth_cookie_name(app)
+        logger.debug('headers %s, path %s, scheme %s', request.headers, request.path, request.scheme)
+        cookie_name = get_session_cookie_name(app)
         if request.path == '/':
             if cookie_name not in request.cookies:
                 resp = await handler(request)
-                client_key = get_client_key(request.headers)
-                resp.set_cookie(cookie_name, sign_client_key(client_key, app['secret_key']), max_age=AUTH_COOKIE_MAX_AGE)
-                app['clients'][client_key] = None
+                resp.set_cookie(cookie_name, get_session_cookie(app['secret_key'], request.headers, request.conn), max_age=SESSION_COOKIE_MAX_AGE)
                 return resp
+
+        request.session = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
 
         return await handler(request)
     return middleware_handler
@@ -63,22 +90,26 @@ async def auth_middleware_factory(app, handler):
 async def db_factory(app, handler):
     async def middleware_handler(request):
         conn = db.get_connection(app['config'])
+        logger.debug('DB Connection is opened')
         if not conn:
             raise aiohttp.HttpProcessingError(code=500)
         request.conn = conn
         resp = await handler(request)
         conn.close()
+        logger.debug('DB Connection is closed')
         return resp
 
     return middleware_handler
 
 
-async def get_tweets(resp, app, client_key, screen_name, count):
-    tm = app['clients'][client_key]
-    if tm is None or tm.screen_name != screen_name:
+async def get_tweets(resp, app, session, screen_name, count, conn):
+    t = rdb.table('session').get(session.get('id')).pluck('timeline').run(conn)
+    logger.debug('got timeline from db %s', t)
+    if not t or t['timeline'].get('screen_name') != screen_name:
         timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
     else:
-        timeline_options = timeline.TimelineOptions(tm.count, tm.max_id, 0, tm.trim_user, tm.screen_name)
+        t = t['timeline']
+        timeline_options = timeline.TimelineOptions(t['count'], int(t['max_id']), 0, t['trim_user'], t['screen_name'])
 
     get_timeline_func = functools.partial(
         timeline.get_timeline,
@@ -86,7 +117,6 @@ async def get_tweets(resp, app, client_key, screen_name, count):
         consumer_secret=app['tw_consumer_secret'])
 
     tm = timeline.Timeline(timeline_options, get_timeline_func)
-    app['clients'][client_key] = tm
     logger.debug('Timeline %s', tm)
 
     tweets = []
@@ -97,6 +127,15 @@ async def get_tweets(resp, app, client_key, screen_name, count):
         for t in reversed(tweets):
             resp.send_str(json.dumps({'type': 'tweet', 'tweet_id': t['id_str']}))
         resp.send_str(json.dumps({'type': 'end'}))
+        rdb.table('session').get(session['id']).update({
+            'timeline': {
+                'max_id': str(tm.max_id),
+                'since_id': str(tm.since_id),
+                'screen_name': tm.screen_name,
+                'trim_user': tm.trim_user,
+                'count': tm.count
+            }
+        }).run(conn)
     except timeline.UserNotFound:
         resp.send_str(json.dumps({'type': 'error', 'desc': 'User not found'}))
     except timeline.TwitterError:
@@ -124,27 +163,30 @@ async def ws_handler(request):
                 m = json.loads(msg.data)
                 logger.debug('Got msg %s', m)
                 if m['type'] == 'start':
-                    client_key = unsign_client_key(m.get('client_key'), app['secret_key'])
-                    if client_key and client_key in app['clients']:
-                        await get_tweets(resp, app, client_key, m['screen_name'], m['count'])
+                    if request.session:
+                        await get_tweets(resp, app, request.session, m['screen_name'], m['count'], request.conn)
                     else:
                         logger.info('Unknown client, closing')
                         await resp.close()
                         app['sockets'].remove(resp)
-            except json.JSONDecodeError as e:
-                logger.exception('Bad json %s', e)
+                        break
+            except Exception as e:
+                logger.exception('Got error %s', e)
+                resp.send_str(json.dumps({'type': 'error', 'desc': 'Server error'}))
                 await resp.close()
                 logger.debug('Connection is closed %s', resp)
                 app['sockets'].remove(resp)
+                break
 
         elif msg.tp == MsgType.error:
             logger.exception('ws connection closed with exception %s', resp.exception())
 
+    logger.debug('Return Response')
     return resp
 
 
 async def create_app(loop, config, debug=False):
-    app = Application(loop=loop, middlewares=[auth_middleware_factory, db_factory])
+    app = Application(loop=loop, middlewares=[db_factory, session_middleware_factory])
 
     @asyncio.coroutine
     def static_processor(request):
@@ -160,10 +202,11 @@ async def create_app(loop, config, debug=False):
     app['tw_consumer_key'] = os.environ.get('CONSUMER_KEY')
     app['tw_consumer_secret'] = os.environ.get('CONSUMER_SECRET')
     app['secret_key'] = os.environ.get('SECRET_KEY')
-    app['clients'] = {}
+    app['domain'] = os.environ.get('DOMAIN')
     app['config'] = config
 
     app.router.add_route('GET', '/', index_handler)
+    app.router.add_route('GET', '/signin', signin_handler)
     app.router.add_route('GET', '/tweets', ws_handler)
     if debug:
         app.router.add_route('GET', '/static/{a}', static_handler)

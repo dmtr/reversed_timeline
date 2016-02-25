@@ -24,7 +24,6 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     var protocol = nestedProp(['location', 'protocol'], window);
     var host = nestedProp(['location', 'host'], window);
     var wsUri = (protocol.join() == 'https:' && 'wss://' || 'ws://') + host.join() + '/tweets';
-    var client_key = utils.getCookie('auth');
     var tweets = Array();
     var conn = m.Left.of('Not Connected');
     var currentUser = m.Left.of('None');
@@ -89,7 +88,6 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         var msg = {  
             screen_name: $('#username').val(),
             type: 'start',
-            client_key: client_key,
             count: $('#count').val()
         };
 

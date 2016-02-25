@@ -1,7 +1,6 @@
 [http]
 port = 5000
 host = 127.0.0.1
-auth_cookie = auth
 session_cookie = session
 static_url = /static
 [rdb]
