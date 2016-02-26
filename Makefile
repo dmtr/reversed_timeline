@@ -1,10 +1,20 @@
-.PHONY: all
+.PHONY: all build
 
+MACHINE?=dev
+FLAG?=0
 
-dev:
-	eval "$(docker-machine env dev)"
+export MACHINE
+
+ifeq ($(FLAG), 0)
+build:
+	$(info "Setting environment $(MACHINE)")
+	./docker_env.sh
+else
+build:
+	$(info "Building $(MACHINE)")
 	docker-compose build
 	docker-compose up -d
 	docker exec reversetwitter_web_1 python reverse_twitter/app.py --createdb --config=reverse_twitter/etc/config
+endif
 
-default: dev
+default: build
