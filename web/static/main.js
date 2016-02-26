@@ -87,7 +87,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
 	function send_msg() {
         var msg = {  
             screen_name: $('#username').val(),
-            type: 'start',
+            type: 'get',
             count: $('#count').val()
         };
 

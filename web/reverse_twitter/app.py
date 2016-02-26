@@ -82,7 +82,6 @@ async def session_middleware_factory(app, handler):
                 return resp
 
         request.session = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
-
         return await handler(request)
     return middleware_handler
 
@@ -102,7 +101,7 @@ async def db_factory(app, handler):
     return middleware_handler
 
 
-async def get_tweets(resp, app, session, screen_name, count, conn):
+def get_timeline(app, session, screen_name, count, conn):
     t = rdb.table('session').get(session.get('id')).pluck('timeline').run(conn)
     logger.debug('got timeline from db %s', t)
     if not t or t['timeline'].get('screen_name') != screen_name:
@@ -116,9 +115,12 @@ async def get_tweets(resp, app, session, screen_name, count, conn):
         consumer_key=app['tw_consumer_key'],
         consumer_secret=app['tw_consumer_secret'])
 
-    tm = timeline.Timeline(timeline_options, get_timeline_func)
-    logger.debug('Timeline %s', tm)
+    return timeline.Timeline(timeline_options, get_timeline_func)
 
+
+async def get_tweets(resp, app, session, screen_name, count, conn):
+    tm = get_timeline(app, session, screen_name, count, conn)
+    logger.debug('Timeline %s', tm)
     tweets = []
     try:
         async for t in tm:
@@ -162,25 +164,23 @@ async def ws_handler(request):
             try:
                 m = json.loads(msg.data)
                 logger.debug('Got msg %s', m)
-                if m['type'] == 'start':
+                if m['type'] == 'get':
                     if request.session:
                         await get_tweets(resp, app, request.session, m['screen_name'], m['count'], request.conn)
                     else:
                         logger.info('Unknown client, closing')
-                        await resp.close()
-                        app['sockets'].remove(resp)
                         break
             except Exception as e:
                 logger.exception('Got error %s', e)
                 resp.send_str(json.dumps({'type': 'error', 'desc': 'Server error'}))
-                await resp.close()
-                logger.debug('Connection is closed %s', resp)
-                app['sockets'].remove(resp)
                 break
 
         elif msg.tp == MsgType.error:
             logger.exception('ws connection closed with exception %s', resp.exception())
 
+    await resp.close()
+    app['sockets'].remove(resp)
+    logger.debug('Connection is closed %s', resp)
     logger.debug('Return Response')
     return resp
 
