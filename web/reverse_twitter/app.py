@@ -19,11 +19,14 @@ from aioauth_client import TwitterClient
 from aiohttp.web import Application, MsgType, WebSocketResponse, Response
 from reverse_twitter.twtimeline import timeline
 from reverse_twitter.db import db
+from rethinkdb.errors import RqlRuntimeError, RqlDriverError, ReqlOpFailedError
 
 
 logger = logging.getLogger(__name__)
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-SESSION_COOKIE_MAX_AGE = 60 * 60 * 24
+SESSION_COOKIE_MAX_AGE = 60 * 60
+LOGGED_SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 
 
 def get_session_cookie_name(app):
@@ -48,7 +51,7 @@ def start_session(ip, conn):
         'ip': ip,
         'timestamp': rdb.now(),
         'valid': True,
-        'twitter_auth': False
+        'logged': False
     }).run(conn)
     return res['generated_keys'][0]
 
@@ -82,8 +85,19 @@ async def session_middleware_factory(app, handler):
                 return resp
 
         request.session = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
+        logger.debug('Session %s', request.session.get('id'))
         return await handler(request)
     return middleware_handler
+
+
+def session_required(f):
+    @functools.wraps(f)
+    def wrapper(request):
+        if not hasattr(request, 'session') or not request.session:
+            return aiohttp.web.HTTPFound('/')
+        return f(request)
+
+    return wrapper
 
 
 async def db_factory(app, handler):
@@ -93,10 +107,17 @@ async def db_factory(app, handler):
         if not conn:
             raise aiohttp.HttpProcessingError(code=500)
         request.conn = conn
-        resp = await handler(request)
-        conn.close()
-        logger.debug('DB Connection is closed')
-        return resp
+        try:
+            resp = await handler(request)
+            return resp
+        except (RqlRuntimeError, RqlDriverError, ReqlOpFailedError) as e:
+            logger.exception('Db error %s', e)
+            raise aiohttp.HttpProcessingError(code=500)
+        except Exception as e:
+            raise e
+        finally:
+            conn.close()
+            logger.debug('DB Connection is closed')
 
     return middleware_handler
 
@@ -145,6 +166,67 @@ async def get_tweets(resp, app, session, screen_name, count, conn):
     except Exception as e:
         logger.exception('Got error while requesting twitter api: %s', e)
         resp.send_str(json.dumps({'type': 'error', 'desc': 'Server error'}))
+
+
+def index_handler(request):
+    logger.debug('index_handler')
+    context = {}
+    cookie = None
+    if hasattr(request, 'session') and request.session.get('logged'):
+        if 'after_login' in request.GET:
+            cookie = get_signed_cookie(app['secret_key'], id=request.session['id'])
+
+        user = rdb.table('user').get_all(request.session['id'], index='current_session').coerce_to('array').run(request.conn)
+        logger.debug('User %s', user)
+        if user:
+            context['user'] = user[0]
+
+    resp = aiohttp_jinja2.render_template('index.html', request, context)
+    if cookie:
+        cookie_name = get_session_cookie_name(request.app)
+        resp.set_cookie(cookie_name, cookie,  max_age=LOGGED_SESSION_COOKIE_MAX_AGE)
+    return resp
+
+
+def get_twitter_client(app):
+    return TwitterClient(
+        consumer_key=app['tw_consumer_key'],
+        consumer_secret=app['tw_consumer_secret']
+    )
+
+
+@session_required
+async def signin_handler(request):
+    client = get_twitter_client(request.app)
+    client.params['oauth_callback'] = 'http://{0}/{1}'.format(request.host, 'callback')
+    token, secret = await client.get_request_token()
+    rdb.table('session').get(request.session['id']).update({
+        'secret': secret,
+        'token': token
+    }).run(request.conn)
+
+    return aiohttp.web.HTTPFound(client.get_authorize_url())
+
+
+@session_required
+async def callback_handler(request):
+    session = request.session
+    client = get_twitter_client(request.app)
+    client.oauth_token_secret = session['secret']
+    client.oauth_token = session['token']
+    oauth_token, oauth_token_secret = await client.get_access_token(request.GET)
+    user, _ = await client.user_info()
+    d = {}
+    d.update(user.__dict__)
+    d['current_session'] = session['id']
+    rdb.table('user').insert(d, conflict='update').run(request.conn)
+    rdb.table('session').get(request.session['id']).update({
+        'secret': oauth_token,
+        'token': oauth_token_secret,
+        'logged': True
+    }).run(request.conn)
+
+    return aiohttp.web.HTTPFound('/?after_login')
 
 
 async def ws_handler(request):
@@ -207,6 +289,7 @@ async def create_app(loop, config, debug=False):
 
     app.router.add_route('GET', '/', index_handler)
     app.router.add_route('GET', '/signin', signin_handler)
+    app.router.add_route('GET', '/callback', callback_handler)
     app.router.add_route('GET', '/tweets', ws_handler)
     if debug:
         app.router.add_route('GET', '/static/{a}', static_handler)

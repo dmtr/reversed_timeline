@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %} index {% endblock %}
+{% block title %} Reversed Timeline {% endblock %}
 
 {% block head %}
 {{ super() }}
@@ -32,11 +32,16 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <a class="navbar-brand" href="#">Reversed Timeline</a>
+          <a class="navbar-brand" href="/">Reversed Timeline</a>
         </div>
         <div id="navbar" class="collapse navbar-collapse">
           <ul class="nav navbar-nav">
+{% if user %}
+           <li><img src="{{ user.picture }}"/></li>
+           <li>{{ user.username }}</li>
+{% else %}
            <li><a href="/signin"><img src="{{ static_url }}/sign-in-with-twitter-gray.png"/></a></li>
+{% endif %}
             <li><a href="https://github.com/dmtr/reversed_timeline">Github</a></li>
           </ul>
         </div><!--/.nav-collapse -->
@@ -51,7 +56,7 @@
               <input id="username" type="text" class="form-control" placeholder="Username"
               aria-describedby="basic-addon1">
     </div>
-    {% if logged %}
+    {% if user %}
     <div class="radio">
         <label>
           <input type="radio"  id="radio_user_timeline" value="user" checked>

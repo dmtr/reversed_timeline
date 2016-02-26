@@ -6,7 +6,7 @@ from rethinkdb.errors import RqlRuntimeError, RqlDriverError, ReqlOpFailedError
 
 logger = logging.getLogger(__name__)
 
-TABLES = (('user', []), ('session', []))
+TABLES = (('user', ['current_session']), ('session', []))
 
 migrations = set()
 
