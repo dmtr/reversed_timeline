@@ -60,6 +60,13 @@ def get_session_cookie(secret_key, headers, conn):
     return get_signed_cookie(secret_key, id=start_session(headers.get('X-Forwarded-For', None), conn))
 
 
+def get_user_by_id(_id, conn):
+    user = rdb.table('user').get_all(_id, index='current_session').coerce_to('array').run(conn)
+    logger.debug('User %s', user)
+    if user:
+        return user[0]
+
+
 def get_and_check_session(request, secret_key, domain, cookie_name):
     if 'SEC-WEBSOCKET-KEY' in request.headers:
         origin = parse.urlparse(request.headers.get('ORIGIN'))
@@ -71,6 +78,12 @@ def get_and_check_session(request, secret_key, domain, cookie_name):
     if s:
         s = rdb.table('session').get(s.get('id')).run(request.conn)
         if s and s['valid'] == True:
+            if s['logged']:
+                user = get_user_by_id(s['id'], request.conn)
+                if user:
+                    s['user'] = user
+                else:
+                    logger.error('User not found by id %s', s['id'])
             return s
 
 
@@ -78,15 +91,17 @@ async def session_middleware_factory(app, handler):
     async def middleware_handler(request):
         logger.debug('headers %s, path %s, scheme %s', request.headers, request.path, request.scheme)
         cookie_name = get_session_cookie_name(app)
-        if request.path == '/':
-            if cookie_name not in request.cookies:
-                resp = await handler(request)
-                resp.set_cookie(cookie_name, get_session_cookie(app['secret_key'], request.headers, request.conn), max_age=SESSION_COOKIE_MAX_AGE)
-                return resp
+        if cookie_name in request.cookies:
+            s = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
+            if s:
+                request.session = s
+                logger.debug('Session %s', request.session.get('id'))
+                return await handler(request)
 
-        request.session = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
-        logger.debug('Session %s', request.session.get('id'))
-        return await handler(request)
+        resp = await handler(request)
+        resp.set_cookie(cookie_name, get_session_cookie(app['secret_key'], request.headers, request.conn), max_age=SESSION_COOKIE_MAX_AGE)
+        return resp
+
     return middleware_handler
 
 
@@ -122,21 +137,56 @@ async def db_factory(app, handler):
     return middleware_handler
 
 
+def get_twitter_client(app, session=None):
+    client = TwitterClient(
+        consumer_key=app['tw_consumer_key'],
+        consumer_secret=app['tw_consumer_secret']
+    )
+    if session:
+        client.oauth_token_secret = session['secret']
+        client.oauth_token = session['token']
+    return client
+
+
+async def get_tweets_for_logged_user(url, app, session):
+    client = get_twitter_client(app, session)
+    u = parse.urlparse(url)
+    params = dict(parse.parse_qsl(u.query))
+    logger.debug('url %s, params %s', u.path, params)
+    r = await client.request('GET', u.path, params=params)
+    return (await r.json(), r)
+
+
 def get_timeline(app, session, screen_name, count, conn):
     t = rdb.table('session').get(session.get('id')).pluck('timeline').run(conn)
-    logger.debug('got timeline from db %s', t)
+    logger.debug('got timeline %s', t)
     if not t or t['timeline'].get('screen_name') != screen_name:
         timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
     else:
         t = t['timeline']
         timeline_options = timeline.TimelineOptions(t['count'], int(t['max_id']), 0, t['trim_user'], t['screen_name'])
 
-    get_timeline_func = functools.partial(
-        timeline.get_timeline,
-        consumer_key=app['tw_consumer_key'],
-        consumer_secret=app['tw_consumer_secret'])
+    url = timeline.USER_URL
+    if session['logged']:
+        get_timeline_func = functools.partial(
+            get_tweets_for_logged_user,
+            app=app,
+            session=session
+        )
 
-    return timeline.Timeline(timeline_options, get_timeline_func)
+        if 'user' not in session:
+            user = get_user_by_id(session['id'], conn)
+        else:
+            user = session['user']
+        if screen_name == user['username']:
+            url = timeline.HOME_URL
+    else:
+        get_timeline_func = functools.partial(
+            timeline.get_timeline,
+            consumer_key=app['tw_consumer_key'],
+            consumer_secret=app['tw_consumer_secret'])
+
+    return timeline.Timeline(timeline_options, get_timeline_func, url=url)
 
 
 async def get_tweets(resp, app, session, screen_name, count, conn):
@@ -176,23 +226,14 @@ def index_handler(request):
         if 'after_login' in request.GET:
             cookie = get_signed_cookie(app['secret_key'], id=request.session['id'])
 
-        user = rdb.table('user').get_all(request.session['id'], index='current_session').coerce_to('array').run(request.conn)
-        logger.debug('User %s', user)
-        if user:
-            context['user'] = user[0]
+        if 'user' in request.session:
+            context['user'] = request.session['user']
 
     resp = aiohttp_jinja2.render_template('index.html', request, context)
     if cookie:
         cookie_name = get_session_cookie_name(request.app)
         resp.set_cookie(cookie_name, cookie,  max_age=LOGGED_SESSION_COOKIE_MAX_AGE)
     return resp
-
-
-def get_twitter_client(app):
-    return TwitterClient(
-        consumer_key=app['tw_consumer_key'],
-        consumer_secret=app['tw_consumer_secret']
-    )
 
 
 @session_required
@@ -210,19 +251,17 @@ async def signin_handler(request):
 
 @session_required
 async def callback_handler(request):
-    session = request.session
-    client = get_twitter_client(request.app)
-    client.oauth_token_secret = session['secret']
-    client.oauth_token = session['token']
+    client = get_twitter_client(request.app, request.session)
     oauth_token, oauth_token_secret = await client.get_access_token(request.GET)
     user, _ = await client.user_info()
     d = {}
     d.update(user.__dict__)
-    d['current_session'] = session['id']
+    session_id = request.session['id']
+    d['current_session'] = session_id
     rdb.table('user').insert(d, conflict='update').run(request.conn)
-    rdb.table('session').get(request.session['id']).update({
-        'secret': oauth_token,
-        'token': oauth_token_secret,
+    rdb.table('session').get(session_id).update({
+        'secret': oauth_token_secret,
+        'token': oauth_token,
         'logged': True
     }).run(request.conn)
 

@@ -13,6 +13,8 @@ from . app_only_client import get_timeline
 
 logger = logging.getLogger(__name__)
 TimelineOptions = namedtuple('TimelineOptions', 'count max_id since_id trim_user screen_name')
+USER_URL = 'statuses/user_timeline.json'
+HOME_URL = 'statuses/home_timeline.json'
 
 
 class TimelineError(Exception):
@@ -29,13 +31,14 @@ class TwitterError(TimelineError):
 
 class Timeline(object):
     """Iterator over timeline"""
-    def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep, export_all=False):
+    def __init__(self, timeline_options, get_timeline_func, delay_func=asyncio.sleep, export_all=False, url=USER_URL):
         self._count = timeline_options.count
         self._max_id = timeline_options.max_id
         self._since_id = timeline_options.since_id
         self._trim_user = timeline_options.trim_user
         self._screen_name = timeline_options.screen_name
         self._get_timeline_func = get_timeline_func
+        self._url = url
         self._first_request = True
         self._timeline = []
         self._export_all = export_all and not (timeline_options.max_id or timeline_options.since_id)
@@ -62,8 +65,12 @@ class Timeline(object):
     def trim_user(self):
         return self._trim_user
 
+    @property
+    def url(self):
+        return self._url
+
     def __repr__(self):
-        return 'Timeline for {self._screen_name}, max_id: {self.max_id}, since_id: {self.since_id}'.format(self=self)
+        return 'Timeline for {self._screen_name}, max_id: {self.max_id}, since_id: {self.since_id}, url: {self._url}'.format(self=self)
 
     def _prepare_options(self):
         o = dict()
@@ -95,9 +102,7 @@ class Timeline(object):
             self._delay = 0
 
         qs = urllib.parse.urlencode(self._prepare_options())
-        url = 'statuses/user_timeline.json'
-        if qs:
-            url = '{0}?{1}'.format(url, qs)
+        url = '{0}?{1}'.format(self._url, qs)
         content, resp = await self._get_timeline_func(url)
         logger.debug(u'Url %s, got response %s', url, resp)
         self._check_response(resp)
