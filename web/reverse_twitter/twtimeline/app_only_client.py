@@ -10,11 +10,15 @@ import aiohttp
 
 API_URL = 'https://api.twitter.com/'
 API_VER = '1.1/'
-TIMEOUT = 3
+TIMEOUT = 10
 
 logger = logging.getLogger(__name__)
 
 _bearer_auth = None
+
+
+class AuthError(Exception):
+    pass
 
 
 async def _get_bearer_token(consumer_key,  secret):
@@ -62,10 +66,6 @@ class TwitterBearerAuth(aiohttp.BasicAuth):
 
     def encode(self):
         return 'Bearer ' + self._bearer
-
-
-class AuthError(Exception):
-    pass
 
 
 if __name__ == "__main__":
