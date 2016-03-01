@@ -70,7 +70,7 @@ def get_user_by_id(_id, conn):
 def get_and_check_session(request, secret_key, domain, cookie_name):
     if 'SEC-WEBSOCKET-KEY' in request.headers:
         origin = parse.urlparse(request.headers.get('ORIGIN'))
-        if origin.netloc != app['domain']:
+        if origin.netloc != domain:
             logger.debug('Wrong origin %s', origin)
             return
 
@@ -92,7 +92,7 @@ async def session_middleware_factory(app, handler):
         logger.debug('headers %s, path %s, scheme %s', request.headers, request.path, request.scheme)
         cookie_name = get_session_cookie_name(app)
         if cookie_name in request.cookies:
-            s = get_and_check_session(request, app['secret_key'], app['domain'], cookie_name)
+            s = get_and_check_session(request, app['secret_key'], app['config']['http']['domain'], cookie_name)
             if s:
                 request.session = s
                 logger.debug('Session %s', request.session.get('id'))
@@ -286,7 +286,7 @@ async def ws_handler(request):
                 m = json.loads(msg.data)
                 logger.debug('Got msg %s', m)
                 if m['type'] == 'get':
-                    if request.session:
+                    if hasattr(request, 'session'):
                         await get_tweets(resp, app, request.session, m['screen_name'], m['count'], request.conn)
                     else:
                         logger.info('Unknown client, closing')
@@ -323,7 +323,6 @@ async def create_app(loop, config, debug=False):
     app['tw_consumer_key'] = os.environ.get('CONSUMER_KEY')
     app['tw_consumer_secret'] = os.environ.get('CONSUMER_SECRET')
     app['secret_key'] = os.environ.get('SECRET_KEY')
-    app['domain'] = os.environ.get('DOMAIN')
     app['config'] = config
 
     app.router.add_route('GET', '/', index_handler)
