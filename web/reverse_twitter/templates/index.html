@@ -38,7 +38,7 @@
           <ul class="nav navbar-nav">
 {% if user %}
            <li><img src="{{ user.picture }}"/></li>
-           <li>{{ user.username }}</li>
+           <li><a href="https://twitter.com/{{ user.username }}">{{ user.username }}</a></li>
 {% else %}
            <li><a href="/signin"><img src="{{ static_url }}/sign-in-with-twitter-gray.png"/></a></li>
 {% endif %}
@@ -79,7 +79,7 @@
         <input class="btn btn-default" type="submit" value="Go" id="go-btn">
     </form>
     <div id="alert" class="alert alert-danger hidden" role="alert"></div>
-    <div id="tweets"></div>
+    <div id="tweets" class="tweets"></div>
   </div>
 </div>
 {% endblock %}

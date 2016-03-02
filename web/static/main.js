@@ -84,13 +84,12 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         )(w);
     }
 
-	function send_msg() {
+	function send_msg(type, screen_name, count) {
         var msg = {  
-            screen_name: $('#username').val(),
-            type: 'get',
-            count: $('#count').val()
+            screen_name: screen_name,
+            type: type,
+            count: count
         };
-
         conn.send(JSON.stringify(msg)); 
     }
 
@@ -104,10 +103,17 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
                 $("#tweets").empty();
             }
             currentUser = $('#username').val();
-            send_msg();
+            send_msg('get_newest', $('#username').val(), $('#count').val());
             e.preventDefault();
         });
 
+        $("#tweets").scroll(function(e){
+            if ($(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight) {
+                send_msg('get_newest', null, null);
+            } else if ($(this).scrollTop() < 5) {
+                send_msg('get_oldest', null, null);
+            }
+        });
     });
 });
 

@@ -157,15 +157,32 @@ async def get_tweets_for_logged_user(url, app, session):
     return (await r.json(), r)
 
 
-def get_timeline(app, session, screen_name, count, conn):
+def get_timeline_options(app, session, screen_name, count, what, conn):
     t = rdb.table('session').get(session.get('id')).pluck('timeline').run(conn)
-    logger.debug('got timeline %s', t)
-    if not t or t['timeline'].get('screen_name') != screen_name:
+    logger.debug('Got prev timeline %s', t)
+    prev_timeline = None
+    if not t or (screen_name and t['timeline'].get('screen_name') != screen_name):
         timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
     else:
         t = t['timeline']
-        timeline_options = timeline.TimelineOptions(t['count'], int(t['max_id']), 0, t['trim_user'], t['screen_name'])
+        prev_timeline = timeline.TimelineOptions(
+            t['count'],
+            int(t['max_id']),
+            int(t['since_id']),
+            t['trim_user'],
+            t['screen_name']
+        )
+        timeline_options = timeline.TimelineOptions(
+            prev_timeline.count,
+            prev_timeline.max_id if what == 'get_oldest' else 0,
+            prev_timeline.since_id if what == 'get_newest' else 0,
+            prev_timeline.trim_user,
+            prev_timeline.screen_name
+        )
+    return (timeline_options, prev_timeline)
 
+
+def get_timeline(app, session, timeline_options, conn):
     url = timeline.USER_URL
     if session['logged']:
         get_timeline_func = functools.partial(
@@ -178,7 +195,7 @@ def get_timeline(app, session, screen_name, count, conn):
             user = get_user_by_id(session['id'], conn)
         else:
             user = session['user']
-        if screen_name == user['username']:
+        if timeline_options.screen_name == user['username']:
             url = timeline.HOME_URL
     else:
         get_timeline_func = functools.partial(
@@ -189,8 +206,9 @@ def get_timeline(app, session, screen_name, count, conn):
     return timeline.Timeline(timeline_options, get_timeline_func, url=url)
 
 
-async def get_tweets(resp, app, session, screen_name, count, conn):
-    tm = get_timeline(app, session, screen_name, count, conn)
+async def get_tweets(resp, app, session, screen_name, count, what, conn):
+    tm_options, prev_tm_options = get_timeline_options(app, session, screen_name, count, what, conn)
+    tm = get_timeline(app, session, tm_options, conn)
     logger.debug('Timeline %s', tm)
     tweets = []
     try:
@@ -202,8 +220,8 @@ async def get_tweets(resp, app, session, screen_name, count, conn):
         resp.send_str(json.dumps({'type': 'end'}))
         rdb.table('session').get(session['id']).update({
             'timeline': {
-                'max_id': str(tm.max_id),
-                'since_id': str(tm.since_id),
+                'max_id': str(tm.max_id) if prev_tm_options is None or tm.max_id < prev_tm_options.max_id else str(prev_tm_options.max_id),
+                'since_id': str(tm.since_id) if prev_tm_options is None or tm.since_id > prev_tm_options.since_id else str(prev_tm_options.since_id),
                 'screen_name': tm.screen_name,
                 'trim_user': tm.trim_user,
                 'count': tm.count
@@ -285,9 +303,9 @@ async def ws_handler(request):
             try:
                 m = json.loads(msg.data)
                 logger.debug('Got msg %s', m)
-                if m['type'] == 'get':
+                if m['type'] in ('get_newest', 'get_oldest'):
                     if hasattr(request, 'session'):
-                        await get_tweets(resp, app, request.session, m['screen_name'], m['count'], request.conn)
+                        await get_tweets(resp, app, request.session, m['screen_name'], m['count'], m['type'], request.conn)
                     else:
                         logger.info('Unknown client, closing')
                         break
