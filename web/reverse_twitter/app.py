@@ -218,10 +218,17 @@ async def get_tweets(resp, app, session, screen_name, count, what, conn):
         for t in reversed(tweets):
             resp.send_str(json.dumps({'type': 'tweet', 'tweet_id': t['id_str']}))
         resp.send_str(json.dumps({'type': 'end'}))
+
+        def max_id():
+            return str(tm.max_id) if prev_tm_options is None or (tm.max_id and tm.max_id < prev_tm_options.max_id) else str(prev_tm_options.max_id)
+
+        def since_id():
+            return str(tm.since_id) if prev_tm_options is None or tm.since_id > prev_tm_options.since_id else str(prev_tm_options.since_id)
+
         rdb.table('session').get(session['id']).update({
             'timeline': {
-                'max_id': str(tm.max_id) if prev_tm_options is None or tm.max_id < prev_tm_options.max_id else str(prev_tm_options.max_id),
-                'since_id': str(tm.since_id) if prev_tm_options is None or tm.since_id > prev_tm_options.since_id else str(prev_tm_options.since_id),
+                'max_id': max_id(),
+                'since_id': since_id(),
                 'screen_name': tm.screen_name,
                 'trim_user': tm.trim_user,
                 'count': tm.count
