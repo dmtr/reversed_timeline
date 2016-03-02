@@ -4,7 +4,13 @@ body {
 
 .starter-template {
   padding: 40px 15px;
+  margin: 10px;
   text-align: center;
+}
+
+.tweets {
+    overflow-y: scroll;
+    max-height: 600px;
 }
 
 .navbar {
