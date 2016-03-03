@@ -25,8 +25,11 @@ from rethinkdb.errors import RqlRuntimeError, RqlDriverError, ReqlOpFailedError
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-SESSION_COOKIE_MAX_AGE = 60 * 60
-LOGGED_SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+
+ANON_SESSION_COOKIE_MAX_AGE = 60 * 10
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+
+MSG_TYPES = ('get', 'get_newest', 'get_oldest')
 
 
 def get_session_cookie_name(app):
@@ -99,7 +102,7 @@ async def session_middleware_factory(app, handler):
                 return await handler(request)
 
         resp = await handler(request)
-        resp.set_cookie(cookie_name, get_session_cookie(app['secret_key'], request.headers, request.conn), max_age=SESSION_COOKIE_MAX_AGE)
+        resp.set_cookie(cookie_name, get_session_cookie(app['secret_key'], request.headers, request.conn), max_age=ANON_SESSION_COOKIE_MAX_AGE)
         return resp
 
     return middleware_handler
@@ -172,6 +175,7 @@ def get_timeline_options(app, session, screen_name, count, what, conn):
             t['trim_user'],
             t['screen_name']
         )
+
         timeline_options = timeline.TimelineOptions(
             prev_timeline.count,
             prev_timeline.max_id if what == 'get_oldest' else 0,
@@ -257,7 +261,7 @@ def index_handler(request):
     resp = aiohttp_jinja2.render_template('index.html', request, context)
     if cookie:
         cookie_name = get_session_cookie_name(request.app)
-        resp.set_cookie(cookie_name, cookie,  max_age=LOGGED_SESSION_COOKIE_MAX_AGE)
+        resp.set_cookie(cookie_name, cookie,  max_age=SESSION_COOKIE_MAX_AGE)
     return resp
 
 
@@ -310,7 +314,7 @@ async def ws_handler(request):
             try:
                 m = json.loads(msg.data)
                 logger.debug('Got msg %s', m)
-                if m['type'] in ('get_newest', 'get_oldest'):
+                if m['type'] in MSG_TYPES:
                     if hasattr(request, 'session'):
                         await get_tweets(resp, app, request.session, m['screen_name'], m['count'], m['type'], request.conn)
                     else:
