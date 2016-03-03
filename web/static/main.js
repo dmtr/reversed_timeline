@@ -30,6 +30,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
     var currentCount = m.Left.of('None');
     var currentTimeline = m.Left.of('None');
     var requestIsRunning = false;
+    var oldest = true;
 
 
     function createTweet(id_str) {
@@ -52,7 +53,11 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
             d.append( $('<div id="' + id_str + '">') );
         },
         tweets);
-        $("#tweets").prepend(d);
+        if ( oldest ) {
+            $("#tweets").prepend(d);
+        } else {
+            $("#tweets").append(d);
+        }
         R.forEach(createTweet, tweets);
     }
 
@@ -129,6 +134,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
                     }
                     $("#tweets").after($("#progress_bar"));
                     $("#progress_bar").removeClass("hidden");
+                    oldest = false;
                     send_msg('get_newest');
                 } else if ($(this).scrollTop() < 3) {
                     if ('deltaY' in e && e.deltaY < 0) {
@@ -136,6 +142,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
                     }
                     $("#progress_bar").removeClass("hidden");
                     $("#tweets").before($("#progress_bar"));
+                    oldest = true;
                     send_msg('get_oldest');
                 }
             }

@@ -160,11 +160,11 @@ async def get_tweets_for_logged_user(url, app, session):
     return (await r.json(), r)
 
 
-def get_timeline_options(app, session, screen_name, count, what, conn):
+def get_timeline_options(app, session, screen_name, count, what, home, conn):
     t = rdb.table('session').get(session.get('id')).pluck('timeline').run(conn)
     logger.debug('Got prev timeline %s', t)
     prev_timeline = None
-    if not t or (screen_name and t['timeline'].get('screen_name') != screen_name):
+    if not t or (screen_name and t['timeline'].get('screen_name') != screen_name) or (home != t['timeline'].get('home')):
         timeline_options = timeline.TimelineOptions(count, 0, 0, True, screen_name)
     else:
         t = t['timeline']
@@ -219,9 +219,9 @@ def from_dict(d, *args):
 
 async def get_tweets(resp, app, session, msg, conn):
     screen_name, count, what, home = from_dict(msg, 'screen_name', 'count', 'type', 'home')
-    tm_options, prev_tm_options = get_timeline_options(app, session, screen_name, count, what, conn)
+    tm_options, prev_tm_options = get_timeline_options(app, session, screen_name, count, what, home, conn)
     tm = get_timeline(app, session, tm_options, home, conn)
-    logger.debug('Timeline %s', tm)
+    logger.debug('%s', tm)
     tweets = []
     try:
         async for t in tm:
@@ -243,7 +243,8 @@ async def get_tweets(resp, app, session, msg, conn):
                 'since_id': since_id(),
                 'screen_name': tm.screen_name,
                 'trim_user': tm.trim_user,
-                'count': tm.count
+                'count': tm.count,
+                'home': home
             }
         }).run(conn)
     except timeline.UserNotFound:
