@@ -91,22 +91,21 @@ class Timeline(object):
             else:
                 raise TwitterError(u'Status is {0}'.format(resp.status))
 
-        remaining = int(resp.headers['x-rate-limit-remaining'])
+        remaining = int(resp.headers['X-RATE-LIMIT-REMAINING'])
         if remaining == 0:
-            reset = int(resp.headers['x-rate-limit-reset'])
+            reset = int(resp.headers['X-RATE-LIMIT-RESET'])
             self._delay = reset - int(time.time())
 
     async def _get_user_timeline(self):
-        if self._delay:
-            logger.debug(u'Waiting %s secs', self._delay)
-            self._delay_func(self._delay)
-            self._delay = 0
-
         qs = urllib.parse.urlencode(self._prepare_options())
         url = '{0}?{1}'.format(self._url, qs)
         content, resp = await self._get_timeline_func(url)
-        logger.debug(u'Url %s, got response %s', url, resp)
         self._check_response(resp)
+        if self._delay:
+            logger.debug(u'Waiting %s secs', self._delay)
+            await self._delay_func(self._delay)
+            self._delay = 0
+            content, resp = await self._get_timeline_func(url)
         return deque(content)
 
     async def __anext__(self):

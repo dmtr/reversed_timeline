@@ -57,18 +57,14 @@
               aria-describedby="basic-addon1">
     </div>
     {% if user %}
-    <div class="radio">
-        <label>
-          <input type="radio"  id="radio_user_timeline" value="user" checked>
-            User Timeline
-        </label>
-    </div>
-    <div class="radio">
-        <label>
-          <input type="radio" id="radio_home_timeline" value="home">
+    <label class="radio-inline">
+      <input type="radio" name="timeline" value="user">
+        User Timeline
+    </label>
+    <label class="radio-inline">
+          <input type="radio" name="timeline" value="home" checked>
             Home Timeline
-        </label>
-    </div>
+    </label>
     {% endif %}
     <span>Tweets amount</span>
     <select class="form-control" id="count">
@@ -76,7 +72,7 @@
       <option>20</option>
       <option>50</option>
      </select> 
-        <input class="btn btn-default" type="submit" value="Go" id="go-btn">
+    <input class="btn btn-default" type="submit" value="Go" id="go-btn">
     </form>
     </br>
     <div id="alert" class="alert alert-danger hidden" role="alert"></div>

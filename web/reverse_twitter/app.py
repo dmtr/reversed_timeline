@@ -186,7 +186,7 @@ def get_timeline_options(app, session, screen_name, count, what, conn):
     return (timeline_options, prev_timeline)
 
 
-def get_timeline(app, session, timeline_options, conn):
+def get_timeline(app, session, timeline_options, home, conn):
     url = timeline.USER_URL
     if session['logged']:
         get_timeline_func = functools.partial(
@@ -199,7 +199,7 @@ def get_timeline(app, session, timeline_options, conn):
             user = get_user_by_id(session['id'], conn)
         else:
             user = session['user']
-        if timeline_options.screen_name == user['username']:
+        if timeline_options.screen_name == user['username'] and home:
             url = timeline.HOME_URL
     else:
         get_timeline_func = functools.partial(
@@ -210,9 +210,17 @@ def get_timeline(app, session, timeline_options, conn):
     return timeline.Timeline(timeline_options, get_timeline_func, url=url)
 
 
-async def get_tweets(resp, app, session, screen_name, count, what, conn):
+def from_dict(d, *args):
+    res = []
+    for a in args:
+        res.append(d[a])
+    return res
+
+
+async def get_tweets(resp, app, session, msg, conn):
+    screen_name, count, what, home = from_dict(msg, 'screen_name', 'count', 'type', 'home')
     tm_options, prev_tm_options = get_timeline_options(app, session, screen_name, count, what, conn)
-    tm = get_timeline(app, session, tm_options, conn)
+    tm = get_timeline(app, session, tm_options, home, conn)
     logger.debug('Timeline %s', tm)
     tweets = []
     try:
@@ -316,7 +324,7 @@ async def ws_handler(request):
                 logger.debug('Got msg %s', m)
                 if m['type'] in MSG_TYPES:
                     if hasattr(request, 'session'):
-                        await get_tweets(resp, app, request.session, m['screen_name'], m['count'], m['type'], request.conn)
+                        await get_tweets(resp, app, request.session, m, request.conn)
                     else:
                         logger.info('Unknown client, closing')
                         break

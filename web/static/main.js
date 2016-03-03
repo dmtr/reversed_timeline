@@ -27,6 +27,8 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
     var tweets = Array();
     var conn = m.Left.of('Not Connected');
     var currentUser = m.Left.of('None');
+    var currentCount = m.Left.of('None');
+    var currentTimeline = m.Left.of('None');
     var requestIsRunning = false;
 
 
@@ -87,12 +89,13 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
         )(w);
     }
 
-	function send_msg(type, screen_name, count) {
+	function send_msg(type) {
         requestIsRunning = true;
         var msg = {  
-            screen_name: screen_name,
+            screen_name: currentUser,
             type: type,
-            count: count
+            count: currentCount,
+            home: currentTimeline
         };
         console.log('sending msg ', msg);
         conn.send(JSON.stringify(msg)); 
@@ -108,7 +111,13 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
                 $("#tweets").empty();
             }
             currentUser = $('#username').val();
-            send_msg('get', $('#username').val(), $('#count').val());
+            var home = ($("input[name=timeline]:checked", '#mainform').val() === 'home') ? true : false;
+            if (currentTimeline !== home) {
+                $("#tweets").empty();
+            }
+            currentTimeline = home;
+            currentCount = $('#count').val();
+            send_msg('get');
             e.preventDefault();
         });
 
@@ -120,14 +129,14 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
                     }
                     $("#tweets").after($("#progress_bar"));
                     $("#progress_bar").removeClass("hidden");
-                    send_msg('get_newest', null, null);
+                    send_msg('get_newest');
                 } else if ($(this).scrollTop() < 3) {
                     if ('deltaY' in e && e.deltaY < 0) {
                         return;
                     }
                     $("#progress_bar").removeClass("hidden");
                     $("#tweets").before($("#progress_bar"));
-                    send_msg('get_oldest', null, null);
+                    send_msg('get_oldest');
                 }
             }
         }
