@@ -1,4 +1,4 @@
-require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) {
+require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], function($, R, utils, m) {
 
 
     var log = function(x) {
@@ -27,6 +27,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     var tweets = Array();
     var conn = m.Left.of('Not Connected');
     var currentUser = m.Left.of('None');
+    var requestIsRunning = false;
 
 
     function createTweet(id_str) {
@@ -55,6 +56,7 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
 
     function processMessage(m) {
         $("#alert").addClass("hidden");
+        $("#progress_bar").addClass("hidden");
 
         if (m.type === 'tweet') {
             tweets.push(m.tweet_id);
@@ -73,7 +75,8 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
         return m.map(
              function(c) {
                 c.onmessage = function(e) {
-                    log('Received: ' + e.data).join();
+                    console.log('got message ', e.data);
+                    requestIsRunning = false;
                     processMessage(JSON.parse(e.data));
                 };
                 c.onclose = function() {
@@ -85,11 +88,13 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
     }
 
 	function send_msg(type, screen_name, count) {
+        requestIsRunning = true;
         var msg = {  
             screen_name: screen_name,
             type: type,
             count: count
         };
+        console.log('sending msg ', msg);
         conn.send(JSON.stringify(msg)); 
     }
 
@@ -107,14 +112,28 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m'], function($, R, utils, m) 
             e.preventDefault();
         });
 
-        $("#tweets").scroll(function(e){
-            if ($(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight) {
-                send_msg('get_newest', null, null);
-            } else if ($(this).scrollTop() < 5) {
-                send_msg('get_oldest', null, null);
+        function get_tweets(e) {
+            console.log(e);
+            if (requestIsRunning === false) {
+                if ($(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight) {
+                    if ('deltaY' in e && e.deltaY > 0) {
+                        return;
+                    }
+                    $("#tweets").after($("#progress_bar"));
+                    $("#progress_bar").removeClass("hidden");
+                    send_msg('get_newest', null, null);
+                } else if ($(this).scrollTop() < 3) {
+                    if ('deltaY' in e && e.deltaY < 0) {
+                        return;
+                    }
+                    $("#progress_bar").removeClass("hidden");
+                    $("#tweets").before($("#progress_bar"));
+                    send_msg('get_oldest', null, null);
+                }
             }
-        });
+        }
+
+        $("#tweets").scroll(get_tweets);
+        $('#tweets').on('mousewheel', get_tweets);
     });
 });
-
-
