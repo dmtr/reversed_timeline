@@ -6,6 +6,7 @@ import logging
 import time
 import sys
 import urllib
+from collections import deque
 from collections import namedtuple
 
 from . app_only_client import get_timeline
@@ -40,7 +41,7 @@ class Timeline(object):
         self._get_timeline_func = get_timeline_func
         self._url = url
         self._first_request = True
-        self._timeline = []
+        self._timeline = deque()
         self._export_all = export_all and not (timeline_options.max_id or timeline_options.since_id)
         self._delay = 0
         self._delay_func = delay_func
@@ -106,7 +107,7 @@ class Timeline(object):
         content, resp = await self._get_timeline_func(url)
         logger.debug(u'Url %s, got response %s', url, resp)
         self._check_response(resp)
-        return content
+        return deque(content)
 
     async def __anext__(self):
         if self._first_request:
@@ -119,7 +120,7 @@ class Timeline(object):
         if not self._timeline:
             raise StopAsyncIteration
 
-        tw = self._timeline.pop(0)
+        tw = self._timeline.popleft()
         self._max_id = tw['id'] - 1
         return tw
 
