@@ -108,12 +108,11 @@ require(['jquery', 'ramda', 'utils/utils', 'utils/m', 'jquery-mousewheel'], func
                 $("#tweets").empty();
             }
             currentUser = $('#username').val();
-            send_msg('get_newest', $('#username').val(), $('#count').val());
+            send_msg('get', $('#username').val(), $('#count').val());
             e.preventDefault();
         });
 
         function get_tweets(e) {
-            console.log(e);
             if (requestIsRunning === false) {
                 if ($(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight) {
                     if ('deltaY' in e && e.deltaY > 0) {
