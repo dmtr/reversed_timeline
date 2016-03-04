@@ -1,0 +1,10 @@
+[http]
+port = 5000
+host = 0.0.0.0
+session_cookie = session
+static_url = /static
+domain = rtimeline.site
+[rdb]
+host = db
+port = 28015
+dbname = rtimeline_test

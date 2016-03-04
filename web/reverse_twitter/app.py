@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
-async def create_app(loop, config, debug=False):
+def create_app(loop, config, debug=False):
     app = Application(loop=loop, middlewares=[db_factory, session_middleware_factory])
 
     @asyncio.coroutine
@@ -47,7 +47,11 @@ async def create_app(loop, config, debug=False):
         app.router.add_route('GET', '/static/{a}', static_handler)
         app.router.add_route('GET', '/static/{a}/{b}', static_handler)
         app.router.add_route('GET', '/static/{a}/{b}/{c}', static_handler)
+    return app
 
+
+async def create_server(loop, config, debug):
+    app = create_app(loop, config, debug)
     handler = app.make_handler()
     srv = await loop.create_server(handler, config['http']['host'], config['http'].getint('port'))
     logger.info("Server started")
@@ -103,7 +107,7 @@ if __name__ == "__main__":
         loop.set_debug(True)
 
     loop.add_signal_handler(signal.SIGINT, lambda: loop.stop())
-    app, srv, handler = loop.run_until_complete(create_app(loop, config, args.debug))
+    app, srv, handler = loop.run_until_complete(create_server(loop, config, args.debug))
     try:
         loop.run_forever()
     except KeyboardInterrupt:
