@@ -7,6 +7,7 @@ from collections import deque
 from operator import methodcaller
 from unittest import mock
 from aiohttp.streams import AsyncStreamReaderMixin
+from aiohttp.protocol import HttpVersion
 from aiohttp.protocol import RawRequestMessage
 from aiohttp.multidict import CIMultiDict
 from reverse_twitter.app import create_app, BASE_DIR
@@ -14,11 +15,22 @@ from reverse_twitter.app import create_app, BASE_DIR
 
 LIMIT = 2 ** 16
 EOF_MARKER = b''
+EOL_MARKER = object()
 
 encode = methodcaller('encode', 'utf8')
 
 
-class FakeStreamReader(AsyncStreamReaderMixin):
+class ResponseMock(mock.MagicMock):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.buffer = []
+
+    def write(self, chunk, *,
+              drain=False, EOF_MARKER=EOF_MARKER, EOL_MARKER=EOL_MARKER):
+        self.buffer.append(chunk)
+
+
+class StreamReaderMock(AsyncStreamReaderMixin):
 
     def __init__(self, *data):
         self._buffer = deque(data)
@@ -130,7 +142,7 @@ class FakeStreamReader(AsyncStreamReaderMixin):
         return data
 
 
-def prepare_request(path, method='GET', version='1.1', should_close=False, compression=None, **headers):
+def prepare_request(path, method='GET', version=HttpVersion(1, 1), should_close=False, compression=None, **headers):
     raw_headers = [(encode(k), encode(v)) for k, v in headers.items()]
     return RawRequestMessage(method, path, version, CIMultiDict(headers), raw_headers, should_close, compression)
 
@@ -148,6 +160,15 @@ def app(event_loop, config):
         return create_app(event_loop, config)
 
 
+async def get_http_response(app, req, data=None):
+    handler = app.make_handler()()
+    handler.transport = mock.MagicMock()
+    handler.reader = mock.MagicMock()
+    handler.writer = ResponseMock()
+    await handler.handle_request(req, StreamReaderMock() if data else StreamReaderMock(data))
+    return handler.writer.buffer
+
+
 def test_app_creation(app, config):
     assert app['secret_key'] == 'mysecret'
     assert app['tw_consumer_key'] == 'consumer_key'
@@ -162,7 +183,5 @@ def test_app_creation(app, config):
 @pytest.mark.asyncio
 async def test_get_index(app):
     req = prepare_request('/')
-    handler = app.make_handler()()
-    handler.transport = mock.Mock()
-    resp = await handler.handle_request(req, FakeStreamReader())
-    assert resp.code == 200
+    raw_resp = await get_http_response(app, req)
+    assert raw_resp is not None
