@@ -3,6 +3,8 @@ import configparser
 import os
 import pytest
 
+import simplejson as json
+
 from collections import deque
 from operator import methodcaller
 from unittest import mock
@@ -10,6 +12,8 @@ from aiohttp.streams import AsyncStreamReaderMixin
 from aiohttp.protocol import HttpVersion
 from aiohttp.protocol import RawRequestMessage
 from aiohttp.multidict import CIMultiDict
+from aiohttp.websocket import OPCODE_BINARY, OPCODE_TEXT, Message
+from aiohttp.web import StreamResponse
 from reverse_twitter.app import create_app, BASE_DIR
 
 
@@ -29,6 +33,16 @@ class ResponseMock(mock.MagicMock):
               drain=False, EOF_MARKER=EOF_MARKER, EOL_MARKER=EOL_MARKER):
         self.buffer.append(chunk)
 
+    def parse_response(self):
+        if not self.buffer:
+            return None, None, None
+
+        status, *headers = [(t[:t.find(b':')], t[t.find(b':') + 2:]) for t in self.buffer[0].splitlines() if t]
+        headers = dict(headers)
+        status = int(status[0].split(b' ')[1])
+        body = self.buffer[1] if len(self.buffer) > 1 else None
+        return status, headers, body
+
 
 class StreamReaderMock(AsyncStreamReaderMixin):
 
@@ -44,6 +58,9 @@ class StreamReaderMock(AsyncStreamReaderMixin):
 
     def set_exception(self, exc):
         pass
+
+    def set_parser(self, p):
+        return self
 
     def feed_eof(self):
         self._eof = True
@@ -142,6 +159,58 @@ class StreamReaderMock(AsyncStreamReaderMixin):
         return data
 
 
+class WsResponseMock(StreamResponse):
+    def __init__(self):
+        super().__init__()
+        self.out_buf = []
+        self.close_called = False
+
+    def __repr__(self):
+        return 'WsResponseMock, out_buf items {0}'.format(len(self.out_buf))
+
+    def set_data(self, data):
+        self.in_buf = deque([make_msg([d]) for d in data])
+
+    async def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.in_buf:
+            raise StopIteration
+        m = self.in_buf.popleft()
+        return m
+
+    def can_start(self, r):
+        return True, mock.MagicMock()
+
+    async def prepare(self, r):
+        return mock.MagicMock()
+
+    def send_str(self, str):
+        self.out_buf.append(str)
+
+    async def close(self):
+        self.close_called = True
+
+    @asyncio.coroutine
+    def write_eof(self):
+        pass
+
+
+def make_msg(data, binary=False):
+    if binary:
+        opcode = OPCODE_BINARY
+    else:
+        opcode = OPCODE_TEXT
+
+    if opcode == OPCODE_TEXT:
+        text = b''.join(data).decode('utf-8')
+        return Message(OPCODE_TEXT, text, '')
+    else:
+        data = b''.join(data)
+        return Message(OPCODE_BINARY, data, '')
+
+
 def prepare_request(path, method='GET', version=HttpVersion(1, 1), should_close=False, compression=None, **headers):
     raw_headers = [(encode(k), encode(v)) for k, v in headers.items()]
     return RawRequestMessage(method, path, version, CIMultiDict(headers), raw_headers, should_close, compression)
@@ -166,7 +235,28 @@ async def get_http_response(app, req, data=None):
     handler.reader = mock.MagicMock()
     handler.writer = ResponseMock()
     await handler.handle_request(req, StreamReaderMock() if data else StreamReaderMock(data))
-    return handler.writer.buffer
+    return handler.writer
+
+
+async def get_websocket_response(app, path, data=None):
+    headers = {
+        'Upgrade': 'websocket',
+        'Connection': 'Upgrade',
+        'Sec-WebSocket-Protocol': 'chat, superchat',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+        'Origin': 'http://{}'.format(app['config']['http']['domain'])
+    }
+    req = prepare_request(path, **headers)
+    handler = app.make_handler()()
+    handler.reader = mock.MagicMock()
+    handler.writer = mock.MagicMock()
+    handler.transport = mock.MagicMock()
+    ws_mock = WsResponseMock()
+    ws_mock.set_data(data)
+    with mock.patch('reverse_twitter.handlers.WebSocketResponse', new=mock.MagicMock(return_value=ws_mock)):
+        await handler.handle_request(req, StreamReaderMock())
+        return ws_mock
 
 
 def test_app_creation(app, config):
@@ -183,5 +273,29 @@ def test_app_creation(app, config):
 @pytest.mark.asyncio
 async def test_get_index(app):
     req = prepare_request('/')
-    raw_resp = await get_http_response(app, req)
-    assert raw_resp is not None
+    r = await get_http_response(app, req)
+    assert r is not None
+    status, headers, body = r.parse_response()
+    assert status == 200
+    assert b'SET-COOKIE' in headers
+    assert body is not None
+
+
+@pytest.mark.asyncio
+async def test_get_tweets_wrong_msg(app):
+    r = await get_websocket_response(app, '/tweets', [b'{"foo" : 1}'])
+    assert r is not None
+    assert r.close_called is True
+    assert 1 == len(r.out_buf)
+    m = json.loads(r.out_buf[0])
+    assert m['type'] == 'error'
+    assert len(app['sockets']) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_tweets_no_session(app):
+    r = await get_websocket_response(app, '/tweets', [b'{"type" : "get"}'])
+    assert r is not None
+    assert r.close_called is True
+    assert 0 == len(r.out_buf)
+    assert len(app['sockets']) == 0
