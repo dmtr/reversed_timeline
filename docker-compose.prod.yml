@@ -1,0 +1,18 @@
+version: '2'
+services:
+    web:
+      restart: always
+
+    nginx:
+      restart: always
+      volumes:
+        - /home/www/site/output:/www/site
+
+    db:
+      restart: always
+      volumes: 
+        - rethinkdb-data:/data
+
+volumes:
+    rethinkdb-data:
+        driver: local
