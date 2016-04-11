@@ -1,27 +1,37 @@
-web:
-  restart: always
-  build: ./web/
-  expose:
-    - "5000"
-  volumes:
-    - /app/static
-  env_file:
-    - ./web/.env
-    - ./web/common.env
-  command: python /app/reverse_twitter/app.py --config=/app/reverse_twitter/etc/config 
-  links:
-    - db
+version: '2'
+services:
+    web:
+      restart: always
+      build: ./web/
+      expose:
+        - "5000"
+      volumes:
+        - /app/static
+      env_file:
+        - ./web/.env
+        - ./web/common.env
+      command: python /app/reverse_twitter/app.py --config=/app/reverse_twitter/etc/config 
+      links:
+        - db
 
-nginx:
-  restart: always
-  build: ./nginx/
-  ports:
-    - "80:80"
-  volumes_from:
-    - web
-  links:
-    - web:web
+    nginx:
+      restart: always
+      build: ./nginx/
+      ports:
+        - "80:80"
+      volumes_from:
+        - web
+      volumes:
+        - /home/www/site/output:/www/site
+      links:
+        - web:web
 
-db:
-  restart: always
-  build: ./rethinkdb/
+    db:
+      restart: always
+      build: ./rethinkdb/
+      volumes: 
+        - rethinkdb-data:/data
+
+volumes:
+    rethinkdb-data:
+        driver: local
