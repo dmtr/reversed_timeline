@@ -1,0 +1,6 @@
+version: '2'
+services:
+    web:
+        volumes:
+            - ./web/reverse_twitter:/app/reverse_twitter
+            - ./web/static:/app/static
